@@ -1,11 +1,7 @@
-// A single guard decision: "if (predicate) → outcome"
+// A single branching decision: "if (predicate) { ... }"
 export type DecisionPoint = {
   index: number
-  predicate: string       // atomic predicate text
-  negated: boolean        // true if the guard fires when predicate is falsy (if !x → fail)
-  predicateKind: string
-  outcome: string         // return/throw text
-  outcomeKind: 'return' | 'throw'
+  predicate: string
   line: number
 }
 
@@ -14,15 +10,17 @@ export type DecisionPoint = {
 export type TruthRow = {
   values: ('T' | 'F' | '*')[]
   outcome: string
+  outcomeLabel: string
   outcomeKind: 'return' | 'throw' | 'happy'
+  line: number
 }
 
 // A pair of rows demonstrating that one predicate independently affects the outcome
 export type McdcCase = {
   predicate: string
   index: number
-  rowFail: TruthRow    // this predicate triggers the guard → early exit
-  rowPass: TruthRow    // all guards pass → happy path
+  rowFalse: TruthRow
+  rowTrue: TruthRow
 }
 
 export type DecisionTable = {

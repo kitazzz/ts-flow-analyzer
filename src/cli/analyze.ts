@@ -6,7 +6,7 @@ import { buildDecisionTable } from '../analyzer/buildDecisionTable.ts'
 import { renderTestTemplate } from '../analyzer/renderTestTemplate.ts'
 import type { FunctionReport } from '../model/FunctionReport.ts'
 import type { RuleCandidate } from '../model/RuleCandidate.ts'
-import type { DecisionTable } from '../model/DecisionTable.ts'
+import type { FunctionReportWithNode } from '../analyzer/analyzeFunction.ts'
 
 const program = new Command()
 
@@ -57,8 +57,8 @@ if (opts.ruleCandidates && opts.json) {
   process.exit(1)
 }
 
-// --debug モードはノード付きで取得
-const withNodes = opts.debug ? analyzeSourceFileWithNodes(file) : null
+const needsNodes = Boolean(opts.debug || opts.decisionTable || opts.testTemplate)
+const withNodes = needsNodes ? analyzeSourceFileWithNodes(file) : null
 let reports: FunctionReport[]
 
 try {
@@ -103,10 +103,10 @@ if (opts.json) {
   prettyPrintWithEffects(reports)
 } else if (opts.ruleCandidates) {
   prettyPrintRuleCandidates(detectRuleCandidates(reports))
-} else if (opts.decisionTable) {
-  prettyPrintDecisionTables(reports)
-} else if (opts.testTemplate) {
-  printTestTemplates(reports)
+} else if (opts.decisionTable && withNodes) {
+  prettyPrintDecisionTables(withNodes)
+} else if (opts.testTemplate && withNodes) {
+  printTestTemplates(withNodes)
 } else {
   prettyPrint(reports)
 }
@@ -151,7 +151,7 @@ function prettyPrintWithPredicates(reports: FunctionReport[]): void {
   console.log(`\n${DIVIDER}`)
 }
 
-function prettyPrintDecisionTables(reports: FunctionReport[]): void {
+function prettyPrintDecisionTables(reports: FunctionReportWithNode[]): void {
   const DIVIDER = '─'.repeat(72)
   let found = 0
   for (const r of reports) {
@@ -160,33 +160,45 @@ function prettyPrintDecisionTables(reports: FunctionReport[]): void {
     found++
     console.log(`\n${DIVIDER}`)
     console.log(`[${r.symbolKind}] ${r.symbolName}  :${r.startLine}  (${table.decisions.length} decisions)`)
+    console.log(`  T=true  F=false  *=not evaluated`)
 
-    // Header
-    const header = table.decisions.map((d, i) => `P${i + 1}`.padEnd(4)).join(' ') + '  outcome'
-    const predLine = table.decisions.map((d, i) => `P${i + 1}=${d.predicate.slice(0, 20).padEnd(20)}`).join('  ')
-    console.log(`\n  ${predLine}`)
-    console.log(`\n  ${'P'.padEnd(4).repeat(0)}${header}`)
+    console.log(`\n  Predicates`)
+    for (const decision of table.decisions) {
+      console.log(`  P${decision.index + 1}  :${decision.line}  ${decision.predicate}`)
+    }
+
+    const header = table.decisions.map((_, i) => `P${i + 1}`.padEnd(4)).join(' ') + '  outcome'
+    console.log(`\n  Rows`)
+    console.log(`  ${header}`)
     console.log(`  ${'─'.repeat(header.length)}`)
 
     for (const row of table.truthRows) {
       const vals = row.values.map(v => v.padEnd(4)).join(' ')
-      const out = row.outcome.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
-      const outShort = out.length > 40 ? out.slice(0, 37) + '...' : out
-      const tag = row.outcomeKind === 'happy' ? ' ← happy path' : ''
-      console.log(`  ${vals}  ${outShort}${tag}`)
+      const tag = row.outcomeKind === 'happy' ? ' ← success path' : ''
+      console.log(`  ${vals}  ${row.outcomeLabel}${tag}`)
+    }
+
+    console.log(`\n  Outcomes`)
+    const seenOutcomes = new Set<string>()
+    for (const row of table.truthRows) {
+      const key = `${row.outcomeLabel}:${row.outcome}`
+      if (seenOutcomes.has(key)) continue
+      seenOutcomes.add(key)
+      console.log(`  ${row.outcomeLabel.padEnd(28)} ${row.outcome}`)
     }
 
     console.log(`\n  [MC/DC cases: ${table.mcdcCases.length}]`)
     for (const mc of table.mcdcCases) {
-      const pred = mc.predicate.length > 40 ? mc.predicate.slice(0, 37) + '...' : mc.predicate
-      console.log(`  P${mc.index + 1}: "${pred}"  →  fail row=${mc.rowFail.values.join('')}  pass row=${mc.rowPass.values.join('')}`)
+      console.log(`  P${mc.index + 1}: ${mc.predicate}`)
+      console.log(`    false row=${mc.rowFalse.values.join('')} -> ${mc.rowFalse.outcomeLabel}`)
+      console.log(`    true  row=${mc.rowTrue.values.join('')} -> ${mc.rowTrue.outcomeLabel}`)
     }
   }
   if (found === 0) console.log('No decision tables could be built.')
   else console.log(`\n${DIVIDER}`)
 }
 
-function printTestTemplates(reports: FunctionReport[]): void {
+function printTestTemplates(reports: FunctionReportWithNode[]): void {
   const DIVIDER = '─'.repeat(72)
   let found = 0
   for (const r of reports) {
