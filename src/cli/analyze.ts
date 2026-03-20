@@ -14,6 +14,7 @@ program
   .option('--min-complexity <n>', 'Filter symbols with cyclomaticComplexity >= N', parseInt)
   .option('--debug', 'Show AST tree for each symbol after metrics')
   .option('--debug-depth <n>', 'Max AST depth shown with --debug (default: 8)', parseInt)
+  .option('--predicates', 'Show extracted atomic predicates for each symbol')
   .parse()
 
 const [file] = program.args
@@ -23,10 +24,15 @@ const opts = program.opts<{
   minComplexity?: number
   debug?: boolean
   debugDepth?: number
+  predicates?: boolean
 }>()
 
 if (opts.debug && opts.json) {
   console.error('--debug and --json cannot be used together')
+  process.exit(1)
+}
+if (opts.predicates && opts.json) {
+  console.error('--predicates and --json cannot be used together')
   process.exit(1)
 }
 
@@ -70,6 +76,8 @@ if (opts.json) {
   console.log(JSON.stringify(reports, null, 2))
 } else if (opts.debug && withNodes) {
   prettyPrintWithAst(withNodes, opts.debugDepth ?? 8)
+} else if (opts.predicates) {
+  prettyPrintWithPredicates(reports)
 } else {
   prettyPrint(reports)
 }
@@ -88,6 +96,30 @@ function prettyPrint(reports: FunctionReport[]): void {
     console.log(`  negations=${m.negationCount ?? 0}  atomicConds=${m.atomicConditionCount ?? 0}  maxCondDepth=${m.maxConditionDepth ?? 0}`)
   }
   console.log()
+}
+
+function prettyPrintWithPredicates(reports: FunctionReport[]): void {
+  if (reports.length === 0) {
+    console.log('No analyzable symbols found.')
+    return
+  }
+  const DIVIDER = '─'.repeat(72)
+  for (const r of reports) {
+    const m = r.metrics
+    console.log(`\n${DIVIDER}`)
+    console.log(`[${r.symbolKind}] ${r.symbolName}  (${r.filePath}:${r.startLine})`)
+    console.log(`  CC=${m.cyclomaticComplexity}  negations=${m.negationCount ?? 0}  atomicConds=${m.atomicConditionCount ?? 0}  maxCondDepth=${m.maxConditionDepth ?? 0}`)
+    const preds = r.predicates ?? []
+    if (preds.length === 0) {
+      console.log('  (no predicates)')
+    } else {
+      for (const p of preds) {
+        const neg = p.negated ? '!' : ' '
+        console.log(`  ${neg} [${p.kind.padEnd(11)}] [${p.context.padEnd(6)}] :${p.line}  ${p.text}`)
+      }
+    }
+  }
+  console.log(`\n${DIVIDER}`)
 }
 
 function prettyPrintWithAst(
