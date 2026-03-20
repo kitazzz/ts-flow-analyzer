@@ -1,7 +1,9 @@
 import { Command } from 'commander'
 import { analyzeSourceFile, analyzeSourceFileWithNodes } from '../analyzer/analyzeFunction.ts'
 import { printAst } from '../analyzer/printAst.ts'
+import { detectRuleCandidates } from '../analyzer/detectRuleCandidates.ts'
 import type { FunctionReport } from '../model/FunctionReport.ts'
+import type { RuleCandidate } from '../model/RuleCandidate.ts'
 
 const program = new Command()
 
@@ -16,6 +18,7 @@ program
   .option('--debug-depth <n>', 'Max AST depth shown with --debug (default: 8)', parseInt)
   .option('--predicates', 'Show extracted atomic predicates for each symbol')
   .option('--effects', 'Show extracted effects (calls, assignments, returns) for each symbol')
+  .option('--rule-candidates', 'Show rule engine candidate analysis across all symbols')
   .parse()
 
 const [file] = program.args
@@ -27,6 +30,7 @@ const opts = program.opts<{
   debugDepth?: number
   predicates?: boolean
   effects?: boolean
+  ruleCandidates?: boolean
 }>()
 
 if (opts.debug && opts.json) {
@@ -39,6 +43,10 @@ if (opts.predicates && opts.json) {
 }
 if (opts.effects && opts.json) {
   console.error('--effects and --json cannot be used together')
+  process.exit(1)
+}
+if (opts.ruleCandidates && opts.json) {
+  console.error('--rule-candidates and --json cannot be used together')
   process.exit(1)
 }
 
@@ -86,6 +94,8 @@ if (opts.json) {
   prettyPrintWithPredicates(reports)
 } else if (opts.effects) {
   prettyPrintWithEffects(reports)
+} else if (opts.ruleCandidates) {
+  prettyPrintRuleCandidates(detectRuleCandidates(reports))
 } else {
   prettyPrint(reports)
 }
@@ -124,6 +134,29 @@ function prettyPrintWithPredicates(reports: FunctionReport[]): void {
       for (const p of preds) {
         const neg = p.negated ? '!' : ' '
         console.log(`  ${neg} [${p.kind.padEnd(11)}] [${p.context.padEnd(6)}] :${p.line}  ${p.text}`)
+      }
+    }
+  }
+  console.log(`\n${DIVIDER}`)
+}
+
+function prettyPrintRuleCandidates(candidates: RuleCandidate[]): void {
+  if (candidates.length === 0) {
+    console.log('No rule candidate signals found.')
+    return
+  }
+  const DIVIDER = '─'.repeat(72)
+  console.log(`\nRule Candidate Analysis  (${candidates.length} signals found)\n${DIVIDER}`)
+  for (const c of candidates) {
+    console.log(`\n[score=${c.score}] [${c.symbolKind}] ${c.symbolName}  :${c.startLine}`)
+    console.log(`  signals: ${c.signals.join(', ')}`)
+    for (const d of c.details) {
+      console.log(`  • ${d}`)
+    }
+    if (c.similarFunctions.length > 0) {
+      console.log(`  similar:`)
+      for (const s of c.similarFunctions) {
+        console.log(`    ${s.symbolName}  overlap=${Math.round(s.overlapRatio * 100)}%  shared: ${s.sharedPredicates.slice(0, 3).join(', ')}`)
       }
     }
   }
