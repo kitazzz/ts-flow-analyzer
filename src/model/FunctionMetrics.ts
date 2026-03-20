@@ -10,4 +10,8 @@ export type FunctionMetrics = {
   functionNestingDepth: number
   callbackNestingDepth: number
   logicalOperatorCount?: number
+  // M2a: condition complexity
+  negationCount?: number
+  atomicConditionCount?: number
+  maxConditionDepth?: number
 }

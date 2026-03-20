@@ -6,6 +6,7 @@ import { analyzeBasicComplexity } from './analyzeBasicComplexity.ts'
 import { analyzeMaxNestingDepth } from './analyzeNesting.ts'
 import { analyzeCyclomaticComplexity } from './analyzeCyclomatic.ts'
 import { analyzeFunctionNesting } from './analyzeFunctionNesting.ts'
+import { analyzeConditionComplexity } from './analyzeCondition.ts'
 
 export type FunctionReportWithNode = FunctionReport & { node: AnalyzableNode }
 
@@ -32,6 +33,7 @@ export function analyzeSourceFileWithNodes(filePath: string): FunctionReportWith
     const cyclomaticComplexity = analyzeCyclomaticComplexity(node)
     const nesting = analyzeFunctionNesting(node)
     const logicalOperatorCount = countLogicalOperators(node)
+    const condition = analyzeConditionComplexity(node)
 
     return {
       symbolName,
@@ -48,6 +50,7 @@ export function analyzeSourceFileWithNodes(filePath: string): FunctionReportWith
         cyclomaticComplexity,
         ...nesting,
         logicalOperatorCount,
+        ...condition,
       },
     }
   })

@@ -85,6 +85,7 @@ function prettyPrint(reports: FunctionReport[]): void {
     console.log(`  CC=${m.cyclomaticComplexity}  nestDepth=${m.maxNestingDepth}  fnNest=${m.functionNestingDepth}  cbDepth=${m.callbackNestingDepth}`)
     console.log(`  if=${m.ifCount}  elseif=${m.elseIfCount}  switch=${m.switchCount}  ternary=${m.ternaryCount}  return=${m.returnCount}`)
     console.log(`  localFns=${m.localFunctionCount}  logicalOps=${m.logicalOperatorCount ?? 0}`)
+    console.log(`  negations=${m.negationCount ?? 0}  atomicConds=${m.atomicConditionCount ?? 0}  maxCondDepth=${m.maxConditionDepth ?? 0}`)
   }
   console.log()
 }
@@ -105,6 +106,7 @@ function prettyPrintWithAst(
     console.log(`  CC=${m.cyclomaticComplexity}  nestDepth=${m.maxNestingDepth}  fnNest=${m.functionNestingDepth}  cbDepth=${m.callbackNestingDepth}`)
     console.log(`  if=${m.ifCount}  elseif=${m.elseIfCount}  switch=${m.switchCount}  ternary=${m.ternaryCount}  return=${m.returnCount}`)
     console.log(`  localFns=${m.localFunctionCount}  logicalOps=${m.logicalOperatorCount ?? 0}`)
+    console.log(`  negations=${m.negationCount ?? 0}  atomicConds=${m.atomicConditionCount ?? 0}  maxCondDepth=${m.maxConditionDepth ?? 0}`)
     console.log()
     console.log('  [AST]  markers: [CC+1] cyclomatic +1 / [nest] nesting depth +1 / [fn] nested function')
     const ast = printAst(r.node, maxDepth)
