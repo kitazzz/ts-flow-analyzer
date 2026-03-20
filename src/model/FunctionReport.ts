@@ -1,5 +1,6 @@
 import type { FunctionMetrics } from './FunctionMetrics.ts'
 import type { AtomicPredicate } from './Predicate.ts'
+import type { Effect } from './Effect.ts'
 
 export type SymbolKind = 'function' | 'variableFunction' | 'method' | 'class'
 
@@ -13,6 +14,6 @@ export type FunctionReport = {
   startLine: number
   metrics: FunctionMetrics
   predicates?: AtomicPredicate[]
-  // effects?: Effect[]     // M2c
+  effects?: Effect[]
   // hints?: AnalysisHints  // M3+
 }

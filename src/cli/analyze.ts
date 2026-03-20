@@ -15,6 +15,7 @@ program
   .option('--debug', 'Show AST tree for each symbol after metrics')
   .option('--debug-depth <n>', 'Max AST depth shown with --debug (default: 8)', parseInt)
   .option('--predicates', 'Show extracted atomic predicates for each symbol')
+  .option('--effects', 'Show extracted effects (calls, assignments, returns) for each symbol')
   .parse()
 
 const [file] = program.args
@@ -25,6 +26,7 @@ const opts = program.opts<{
   debug?: boolean
   debugDepth?: number
   predicates?: boolean
+  effects?: boolean
 }>()
 
 if (opts.debug && opts.json) {
@@ -33,6 +35,10 @@ if (opts.debug && opts.json) {
 }
 if (opts.predicates && opts.json) {
   console.error('--predicates and --json cannot be used together')
+  process.exit(1)
+}
+if (opts.effects && opts.json) {
+  console.error('--effects and --json cannot be used together')
   process.exit(1)
 }
 
@@ -78,6 +84,8 @@ if (opts.json) {
   prettyPrintWithAst(withNodes, opts.debugDepth ?? 8)
 } else if (opts.predicates) {
   prettyPrintWithPredicates(reports)
+} else if (opts.effects) {
+  prettyPrintWithEffects(reports)
 } else {
   prettyPrint(reports)
 }
@@ -116,6 +124,31 @@ function prettyPrintWithPredicates(reports: FunctionReport[]): void {
       for (const p of preds) {
         const neg = p.negated ? '!' : ' '
         console.log(`  ${neg} [${p.kind.padEnd(11)}] [${p.context.padEnd(6)}] :${p.line}  ${p.text}`)
+      }
+    }
+  }
+  console.log(`\n${DIVIDER}`)
+}
+
+function prettyPrintWithEffects(reports: FunctionReport[]): void {
+  if (reports.length === 0) {
+    console.log('No analyzable symbols found.')
+    return
+  }
+  const DIVIDER = '─'.repeat(72)
+  for (const r of reports) {
+    const m = r.metrics
+    console.log(`\n${DIVIDER}`)
+    console.log(`[${r.symbolKind}] ${r.symbolName}  (${r.filePath}:${r.startLine})`)
+    console.log(`  CC=${m.cyclomaticComplexity}  return=${m.returnCount}`)
+    const effs = r.effects ?? []
+    if (effs.length === 0) {
+      console.log('  (no effects)')
+    } else {
+      for (const e of effs) {
+        const label = `[${e.kind.padEnd(10)}][${e.sideEffect.padEnd(11)}]`
+        const text = e.text.length > 60 ? e.text.slice(0, 57) + '...' : e.text
+        console.log(`  ${label} :${e.line}  ${text}`)
       }
     }
   }

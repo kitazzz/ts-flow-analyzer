@@ -8,6 +8,7 @@ import { analyzeCyclomaticComplexity } from './analyzeCyclomatic.ts'
 import { analyzeFunctionNesting } from './analyzeFunctionNesting.ts'
 import { analyzeConditionComplexity } from './analyzeCondition.ts'
 import { extractPredicates } from './extractPredicates.ts'
+import { extractEffects } from './extractEffects.ts'
 
 export type FunctionReportWithNode = FunctionReport & { node: AnalyzableNode }
 
@@ -36,6 +37,7 @@ export function analyzeSourceFileWithNodes(filePath: string): FunctionReportWith
     const logicalOperatorCount = countLogicalOperators(node)
     const condition = analyzeConditionComplexity(node)
     const predicates = extractPredicates(node)
+    const effects = extractEffects(node)
 
     return {
       symbolName,
@@ -55,6 +57,7 @@ export function analyzeSourceFileWithNodes(filePath: string): FunctionReportWith
         ...condition,
       },
       predicates,
+      effects,
     }
   })
 }
