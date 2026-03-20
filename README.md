@@ -280,6 +280,376 @@ M1〜M4 をより有益にするため、次の改善を優先する。
 - outcome ラベルを安定化し、return 文そのものへの依存を減らす
 - call graph を限定導入し、`execute -> checkRisk` のような interprocedural な判定連鎖を扱えるようにする
 
+## Proposal: LLM-Assisted Property Test Generation
+
+これは実装済み機能ではなく提案である。
+
+目的は、静的解析の結果をそのまま人間が読むだけで終わらせず、
+LLM に渡して property test の `true / false` ケース generator と
+テストコードの下書きを作らせ、さらに別段階でブラッシュアップできる形にすること。
+
+### Basic Idea
+
+大まかな流れは次のとおり。
+
+1. 静的解析で predicate / decision / effect / decision table を抽出する
+2. 正常系の baseline input と baseline mocks を用意する
+3. predicate ごとの `true` / `false` 差分仕様を機械的に組み立てる
+4. その中間表現を LLM に渡して generator と test の草案を生成する
+5. 別プロンプトで LLM に命名、重複、assert、fixture 構造をブラッシュアップさせる
+
+### Why Analysis Results Help
+
+既存の分析結果は、LLM にとって次の点で有用。
+
+- `predicates`
+  どの条件を反転させたいか分かる
+- `decision table`
+  どの条件がどの outcome に結びつくか分かる
+- `effects`
+  成功時 / 失敗時にどの副作用が起こるべきか分かる
+- `symbol metadata`
+  どの function / method / class をテスト対象にするか分かる
+
+特に M2 と M4 は、LLM に渡す素材として相性がよい。
+
+### Information Needed
+
+ただし、今の解析結果だけでは安定した property test generator を作るには足りない。
+LLM が実用的なテストを組み立てるには、少なくとも次の情報が必要になる。
+
+- 型情報
+  input 引数、戻り値、依存先メソッド、union 値、optional / nullable 情報
+- 値域制約
+  例: `quantity > 0`, `unitPrice >= 0`, `status in ['active', 'suspended', ...]`
+- baseline valid case
+  全 guard を通る最小の正常入力
+- baseline mocks
+  repository / service の正常返却値
+- predicate の正規化名
+  例: `!order` ではなく `orderMissing`
+- predicate の意味
+  `true` が何を意味し、`false` が何を意味するか
+- decision と atomic condition の分離
+  `a && b` を 1 つの生文字列で終わらせず、必要なら atom に分ける
+- expected outcome
+  戻り値、例外、エラーメッセージ、成功 payload
+- expected effects
+  `save` が呼ばれる / 呼ばれない、呼び出し回数、保存内容
+- domain invariants
+  例: `saved.status === 'pending'`, `totalAmount >= 0`
+- 既存テストスタイル
+  `vitest`, `fast-check`, factory helper, mock helper の前提
+
+### Recommended Intermediate Representation
+
+LLM に渡すデータは自然言語だけでなく、JSON ベースの中間表現を持つのが望ましい。
+
+最低限ほしい項目は次のとおり。
+
+- `symbol`
+- `symbolKind`
+- `baselineInput`
+- `baselineMocks`
+- `predicates`
+- `decisionRows`
+- `trueCaseOverrides`
+- `falseCaseOverrides`
+- `expectedOutcome`
+- `expectedEffects`
+- `invariants`
+
+### Example Shape
+
+```json
+{
+  "symbol": "PlaceOrderUseCase#execute",
+  "symbolKind": "method",
+  "baselineInput": {
+    "userId": "user-1",
+    "items": [
+      { "productId": "p1", "quantity": 1, "unitPrice": 1000 }
+    ],
+    "shippingAddress": {
+      "postalCode": "100-0001",
+      "prefecture": "Tokyo",
+      "city": "Chiyoda",
+      "street": "1-1"
+    }
+  },
+  "baselineMocks": {
+    "userRepo.findById": "activeUser",
+    "orderRepo.save": "echoSavedOrder"
+  },
+  "predicates": [
+    {
+      "id": "P1",
+      "name": "userExists",
+      "raw": "!user",
+      "trueMeaning": "user is missing",
+      "falseMeaning": "user exists"
+    }
+  ],
+  "cases": [
+    {
+      "predicateId": "P1",
+      "falseCaseOverrides": {
+        "mocks": { "userRepo.findById": "activeUser" }
+      },
+      "trueCaseOverrides": {
+        "mocks": { "userRepo.findById": null }
+      },
+      "expectedOutcome": {
+        "trueCase": "UserNotFound",
+        "falseCase": "Continue"
+      },
+      "expectedEffects": {
+        "trueCase": { "orderRepo.save.calls": 0 }
+      }
+    }
+  ]
+}
+```
+
+このような中間表現があれば、LLM は次のことを比較的安定して行える。
+
+- `fast-check` の generator 作成
+- predicate ごとの `true / false` witness case 生成
+- property test の雛形出力
+- fixture / factory の改善提案
+- assertion の補強
+
+### Suggested LLM Responsibilities
+
+LLM にやらせる責務は、一度に全部ではなく段階を分けたほうがよい。
+
+#### Stage 1: Generator Draft
+
+- baseline input から差分で `true / false` ケースを作る
+- mock override を作る
+- property test generator の初稿を出す
+
+#### Stage 2: Test Draft
+
+- `vitest` / `fast-check` のテストコードを生成する
+- outcome と side effect の assert を入れる
+- 既存 helper に寄せて整形する
+
+#### Stage 3: Review / Polish
+
+- 重複を削る
+- 命名を改善する
+- overfit した case を減らす
+- 境界値や shrink 方針を追加する
+
+### What the LLM Should Not Infer Blindly
+
+次の情報を LLM に推測で埋めさせるのは危険。
+
+- repository の返却 shape
+- 依存メソッドの副作用契約
+- enum / union の完全な値域
+- 「どのエラーを仕様として固定すべきか」
+- property test の縮小戦略
+
+これらはコードまたは中間表現として明示したほうがよい。
+
+### Practical Benefits
+
+この方式が成立すると、次のメリットがある。
+
+- 人間は predicate と expected outcome をレビューすればよくなる
+- LLM は生コード全体を毎回読むより安定して generator を組み立てられる
+- decision table をテストケース生成に接続できる
+- strict MC/DC に近づくための土台としても使える
+
+### Risks / Caveats
+
+- predicate 名が生コードのままだと、LLM の出力品質が安定しない
+- baseline valid case がないと、複数条件を同時に壊してしまいやすい
+- class 集約レポートは generator の直接入力としては不向き
+  property test は method / function 単位を基本にしたほうがよい
+- CFG / call graph がない段階では、到達不能ケースを混ぜる危険がある
+
+### Recommended Next Step
+
+実装を急がず提案段階で進めるなら、まずは次の順で検証するのがよい。
+
+1. `method` 単位に限定する
+2. baseline valid case を手で与える
+3. predicate の正規化名を付ける
+4. `true / false override spec` の JSON を設計する
+5. その JSON を使って LLM に generator と test 雛形を書かせる
+
+この順であれば、現在の AST ベース解析の延長として無理なく検証できる。
+
+## Updated Milestones
+
+### M1: Complexity Screening
+
+目的:
+複雑な function / method / class を素早く見つける入口をつくる。
+
+主な出力:
+
+- cyclomatic complexity
+- nesting depth
+- return count
+- logical operator count
+- class / method / function の区別
+
+評価:
+
+- 人間にも LLM にも有益
+- ただし説明力は弱く、スクリーニング用途が中心
+
+次の改善:
+
+- class 専用メトリクスを分離する
+- class 集約値と method 個別値を混ぜない
+
+### M2: Predicate Extraction
+
+目的:
+条件分岐の中身を構造化し、後続の説明・ルール抽出・テスト生成の土台をつくる。
+
+主な出力:
+
+- atomic predicates
+- negation count
+- condition context (`if`, `elseif`, `ternary`, etc.)
+- line numbers
+
+評価:
+
+- LLM 入力として非常に有益
+- 要約、ルール候補化、テスト生成、命名補助の基礎になる
+
+次の改善:
+
+- predicate の正規化名を付ける
+  例: `!order` → `orderMissing`
+- decision と atomic condition を分離する
+- short-circuit を意識した条件分解を導入する
+
+### M3: Effect / Rule Hint Analysis
+
+目的:
+条件だけでなく、副作用とルール候補のシグナルも合わせて見られるようにする。
+
+主な出力:
+
+- effects (`dbRead`, `dbWrite`, `pureCall`, `return`, etc.)
+- rule candidate signals
+- repeated predicate detection
+- decision convergence hints
+
+評価:
+
+- `effects` は人間にも LLM にも有益
+- `rule-candidates` はまだ荒く、補助情報として扱うのが妥当
+
+次の改善:
+
+- class と method を別スコアリングにする
+- class 集約を method 類似度判定に直接入れない
+- predicate と effect を同一経路上で関連付ける
+
+### M4: Decision Table Core
+
+目的:
+条件と outcome の対応を構造化し、説明・レビュー・テスト接続の中心成果物をつくる。
+
+主な出力:
+
+- decision table
+- representative rows
+- outcome labels
+- MC/DC-like witness pairs
+
+評価:
+
+- 現状もっとも価値が高い出力
+- 人間には分岐理解、LLM には要約・テスト観点抽出の入力として有益
+
+次の改善:
+
+- outcome ラベルを安定化する
+- atomic condition と decision を分離する
+- short-circuit を反映した stricter な分解に寄せる
+- CFG を導入して到達可能性を検証する
+
+### M5: LLM-Assisted Test Generation IR
+
+目的:
+解析結果を LLM に渡し、property test の true/false ケース generator と test draft を安定生成できる中間表現をつくる。
+
+主な出力:
+
+- baseline valid case
+- baseline mocks
+- normalized predicates
+- true/false override spec
+- expected outcome / expected effects
+- invariants
+
+想定フォーマット:
+
+- JSON-based intermediate representation
+
+評価:
+
+- すでに研究対象として独立可能
+- いきなり full 自動化ではなく、method 単位の小さな検証から始めるのが妥当
+
+次の改善:
+
+- method 単位に限定して試す
+- baseline valid case を手で与える
+- override spec を小さく設計する
+- LLM に generator draft と test draft を書かせる
+
+### M6: CFG / Call Graph Precision
+
+目的:
+AST ベース近似の限界を超え、到達可能性と関数間の判定連鎖をより正確に扱う。
+
+主な出力:
+
+- CFG ベースの decision path
+- 到達不能経路の除外
+- stricter MC/DC に近いケース生成
+- 限定的 call graph による interprocedural analysis
+
+評価:
+
+- 精度改善の本命
+- ただし難易度が高いため、M4 と M5 の価値を固めた後に進める
+
+次の改善:
+
+- まず intra-procedural CFG
+- 次に short-circuit-aware MC/DC
+- 最後に限定的 call graph
+
+## Priority Summary
+
+現時点の優先順位は次のとおり。
+
+1. M4 の品質改善
+2. M2 の predicate 正規化
+3. M3 の class / method 分離
+4. M5 の小規模検証
+5. M6 の CFG 導入
+
+## Working Assumption
+
+この POC の価値の中心は、単なる複雑度計測ではなく、
+「条件と outcome の対応を構造化して見せること」にある。
+
+そのため、今後の設計の主軸は M4 を中心に置き、
+M2 を基礎データ、M3 を補助、M5 を LLM 連携先、M6 を精度改善として育てる。
+
 ## Constraints (POC scope)
 
 - Current implementation reports named functions, variable functions, class methods, and classes
