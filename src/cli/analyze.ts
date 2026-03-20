@@ -2,8 +2,11 @@ import { Command } from 'commander'
 import { analyzeSourceFile, analyzeSourceFileWithNodes } from '../analyzer/analyzeFunction.ts'
 import { printAst } from '../analyzer/printAst.ts'
 import { detectRuleCandidates } from '../analyzer/detectRuleCandidates.ts'
+import { buildDecisionTable } from '../analyzer/buildDecisionTable.ts'
+import { renderTestTemplate } from '../analyzer/renderTestTemplate.ts'
 import type { FunctionReport } from '../model/FunctionReport.ts'
 import type { RuleCandidate } from '../model/RuleCandidate.ts'
+import type { DecisionTable } from '../model/DecisionTable.ts'
 
 const program = new Command()
 
@@ -19,6 +22,8 @@ program
   .option('--predicates', 'Show extracted atomic predicates for each symbol')
   .option('--effects', 'Show extracted effects (calls, assignments, returns) for each symbol')
   .option('--rule-candidates', 'Show rule engine candidate analysis across all symbols')
+  .option('--decision-table', 'Show decision table (truth table + MC/DC) for each symbol')
+  .option('--test-template', 'Generate vitest test templates from MC/DC cases')
   .parse()
 
 const [file] = program.args
@@ -31,6 +36,8 @@ const opts = program.opts<{
   predicates?: boolean
   effects?: boolean
   ruleCandidates?: boolean
+  decisionTable?: boolean
+  testTemplate?: boolean
 }>()
 
 if (opts.debug && opts.json) {
@@ -96,6 +103,10 @@ if (opts.json) {
   prettyPrintWithEffects(reports)
 } else if (opts.ruleCandidates) {
   prettyPrintRuleCandidates(detectRuleCandidates(reports))
+} else if (opts.decisionTable) {
+  prettyPrintDecisionTables(reports)
+} else if (opts.testTemplate) {
+  printTestTemplates(reports)
 } else {
   prettyPrint(reports)
 }
@@ -138,6 +149,56 @@ function prettyPrintWithPredicates(reports: FunctionReport[]): void {
     }
   }
   console.log(`\n${DIVIDER}`)
+}
+
+function prettyPrintDecisionTables(reports: FunctionReport[]): void {
+  const DIVIDER = '─'.repeat(72)
+  let found = 0
+  for (const r of reports) {
+    const table = buildDecisionTable(r)
+    if (!table) continue
+    found++
+    console.log(`\n${DIVIDER}`)
+    console.log(`[${r.symbolKind}] ${r.symbolName}  :${r.startLine}  (${table.decisions.length} decisions)`)
+
+    // Header
+    const header = table.decisions.map((d, i) => `P${i + 1}`.padEnd(4)).join(' ') + '  outcome'
+    const predLine = table.decisions.map((d, i) => `P${i + 1}=${d.predicate.slice(0, 20).padEnd(20)}`).join('  ')
+    console.log(`\n  ${predLine}`)
+    console.log(`\n  ${'P'.padEnd(4).repeat(0)}${header}`)
+    console.log(`  ${'─'.repeat(header.length)}`)
+
+    for (const row of table.truthRows) {
+      const vals = row.values.map(v => v.padEnd(4)).join(' ')
+      const out = row.outcome.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+      const outShort = out.length > 40 ? out.slice(0, 37) + '...' : out
+      const tag = row.outcomeKind === 'happy' ? ' ← happy path' : ''
+      console.log(`  ${vals}  ${outShort}${tag}`)
+    }
+
+    console.log(`\n  [MC/DC cases: ${table.mcdcCases.length}]`)
+    for (const mc of table.mcdcCases) {
+      const pred = mc.predicate.length > 40 ? mc.predicate.slice(0, 37) + '...' : mc.predicate
+      console.log(`  P${mc.index + 1}: "${pred}"  →  fail row=${mc.rowFail.values.join('')}  pass row=${mc.rowPass.values.join('')}`)
+    }
+  }
+  if (found === 0) console.log('No decision tables could be built.')
+  else console.log(`\n${DIVIDER}`)
+}
+
+function printTestTemplates(reports: FunctionReport[]): void {
+  const DIVIDER = '─'.repeat(72)
+  let found = 0
+  for (const r of reports) {
+    const table = buildDecisionTable(r)
+    if (!table) continue
+    found++
+    console.log(`\n${DIVIDER}`)
+    console.log(`// ${r.filePath}:${r.startLine}  [${r.symbolKind}] ${r.symbolName}`)
+    console.log(`${DIVIDER}\n`)
+    console.log(renderTestTemplate(table))
+  }
+  if (found === 0) console.log('No test templates could be generated.')
 }
 
 function prettyPrintRuleCandidates(candidates: RuleCandidate[]): void {
