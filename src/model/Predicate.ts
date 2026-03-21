@@ -22,4 +22,8 @@ export type AtomicPredicate = {
   kind: PredicateKind
   context: DecisionContext
   line: number
+  // Normalized names derived from the raw predicate (set by normalizePredicates)
+  normalizedName?: string   // e.g. "orderMissing", "operatorRoleNotAdmin"
+  trueMeaning?: string      // human description when predicate is true
+  falseMeaning?: string     // human description when predicate is false
 }

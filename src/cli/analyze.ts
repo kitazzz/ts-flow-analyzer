@@ -144,7 +144,12 @@ function prettyPrintWithPredicates(reports: FunctionReport[]): void {
     } else {
       for (const p of preds) {
         const neg = p.negated ? '!' : ' '
-        console.log(`  ${neg} [${p.kind.padEnd(11)}] [${p.context.padEnd(6)}] :${p.line}  ${p.text}`)
+        const raw = `  ${neg} [${p.kind.padEnd(11)}] [${p.context.padEnd(6)}] :${p.line}  ${p.text}`
+        console.log(raw)
+        if (p.normalizedName) {
+          const meaning = p.trueMeaning ? `  true="${p.trueMeaning}"` : ''
+          console.log(`       → ${p.normalizedName}${meaning}`)
+        }
       }
     }
   }
@@ -162,9 +167,17 @@ function prettyPrintDecisionTables(reports: FunctionReportWithNode[]): void {
     console.log(`[${r.symbolKind}] ${r.symbolName}  :${r.startLine}  (${table.decisions.length} decisions)`)
     console.log(`  T=true  F=false  *=not evaluated`)
 
+    // Build lookup: raw predicate text → normalizedName (from atomic predicates)
+    const normMap = new Map<string, string>()
+    for (const p of r.predicates ?? []) {
+      if (p.normalizedName) normMap.set(p.text, p.normalizedName)
+    }
+
     console.log(`\n  Predicates`)
     for (const decision of table.decisions) {
-      console.log(`  P${decision.index + 1}  :${decision.line}  ${decision.predicate}`)
+      const alias = normMap.get(decision.predicate)
+      const aliasStr = alias ? `  → ${alias}` : ''
+      console.log(`  P${decision.index + 1}  :${decision.line}  ${decision.predicate}${aliasStr}`)
     }
 
     const header = table.decisions.map((_, i) => `P${i + 1}`.padEnd(4)).join(' ') + '  outcome'

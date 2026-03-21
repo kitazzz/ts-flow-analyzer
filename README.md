@@ -228,6 +228,43 @@ npx tsx src/cli/analyze.ts samples/usecase/approveOrder.ts --rule-candidates
 npx tsx src/cli/analyze.ts samples/usecase/approveOrder.ts --decision-table
 ```
 
+## Predicate Normalization
+
+`--predicates` と `--decision-table` の出力で、raw な predicate テキストに加えて
+**正規化名**（`normalizedName`）と**意味説明**（`trueMeaning`）を補助表示する。
+
+### 目的
+
+- `!order` → `orderMissing` のように、コードのまま出すより LLM に渡しやすい名前を付ける
+- `operator.role !== 'admin'` → `operatorRoleNotAdmin` のように、人間にも読みやすい形にする
+- `trueMeaning` / `falseMeaning` で、predicate が `true` / `false` のときの意味を言語化する
+
+### 非ゴール
+
+- **ソースコードのリネームは行わない**。正規化名は出力専用で、元のコードは変更しない。
+- 完全な意味論的解析ではなく、構文パターンベースの近似。
+
+### 対応パターン
+
+| kind | 例 | normalizedName |
+|---|---|---|
+| truthiness | `user` | `userExists` |
+| truthiness (negated) | `!order` | `orderMissing` |
+| nullCheck | `order === null` | `orderNull` |
+| nullCheck | `user !== undefined` | `userNotNull` |
+| comparison (string) | `operator.role !== 'admin'` | `operatorRoleNotAdmin` |
+| comparison (.length) | `errors.length > 0` | `errorsNonEmpty` |
+| comparison (numeric) | `total >= HIGH_VALUE_THRESHOLD` | `totalHighValueExceeded` |
+| call | `canTransition(order.status, 'approved')` | `canTransitionApprovedPassed` |
+| call (negated) | `!canTransition(...)` | `canTransitionApprovedFailed` |
+
+### 既知の限界
+
+- 複合条件（`a && b`）は decision table 側でそのまま表示（分解は今後）
+- `camelize` はキャメルケースの関数名の大文字を維持しない（例: `canTransition` → `cantransition`）
+- 数値リテラル `0` はそのまま名前に入る（例: `itemQuantity0NotExceeded`）
+- マッチしない predicate は `fallback` で `unknown_Condition` 形式になる
+
 ### Summary
 
 - M1 は人間にも LLM にも有益
@@ -658,4 +695,4 @@ M2 を基礎データ、M3 を補助、M5 を LLM 連携先、M6 を精度改善
 - Decision table generation is AST-based and method-local
 - Callback classification is structural, not semantic
 - Metrics are heuristics to assist design decisions
-- Predicate extraction and side-effect classification are out of scope (next phase)
+- Predicate normalization is output-only (no source code renaming)
