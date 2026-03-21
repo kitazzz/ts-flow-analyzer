@@ -116,16 +116,40 @@ function deriveComparison(text: string, negated: boolean): Names {
   }
 
   // Numeric threshold comparison
-  // e.g. `total >= HIGH_VALUE_THRESHOLD`
+  // e.g. `total >= HIGH_VALUE_THRESHOLD`, `item.quantity <= 0`, `item.unitPrice < 0`
   const numericRhs = right.match(/^[\d.]+$/) || right.match(/^[A-Z_]+$/)
   if (numericRhs) {
     const base = pathToIdent(left)
-    const rhsId = camelize(right.replace(/_THRESHOLD$/, '').replace(/_/g, ' ').toLowerCase())
-    const gtOp = op === '>' || op === '>='
-    const effectiveGt = negated ? !gtOp : gtOp
-    return effectiveGt
-      ? { name: base + capitalize(rhsId) + 'Exceeded', trueMeaning: `${left} ${op} ${right}`, falseMeaning: `${left} below ${right}` }
-      : { name: base + capitalize(rhsId) + 'NotExceeded', trueMeaning: `${left} below ${right}`, falseMeaning: `${left} ${op} ${right}` }
+    const eop = negated ? negateOp(op) : op  // effective operator after negation
+    const isGt = eop === '>' || eop === '>='
+    const isStrict = eop === '>' || eop === '<'
+
+    // Zero threshold → semantic names (Positive / NonNegative / Negative / ZeroOrBelow)
+    if (right === '0') {
+      if (isGt) {
+        return isStrict
+          ? { name: base + 'Positive',    trueMeaning: `${left} > 0`,  falseMeaning: `${left} <= 0` }
+          : { name: base + 'NonNegative', trueMeaning: `${left} >= 0`, falseMeaning: `${left} < 0`  }
+      } else {
+        return isStrict
+          ? { name: base + 'Negative',    trueMeaning: `${left} < 0`,  falseMeaning: `${left} >= 0` }
+          : { name: base + 'ZeroOrBelow', trueMeaning: `${left} <= 0`, falseMeaning: `${left} > 0`  }
+      }
+    }
+
+    // Named constant (e.g. HIGH_VALUE_THRESHOLD)
+    if (right.match(/^[A-Z_]+$/)) {
+      const rhsId = camelize(right.replace(/_THRESHOLD$/, '').replace(/_/g, ' ').toLowerCase())
+      return isGt
+        ? { name: base + capitalize(rhsId) + 'Exceeded',       trueMeaning: `${left} ${eop} ${right}`, falseMeaning: `${left} below ${right}` }
+        : { name: base + capitalize(rhsId) + 'BelowThreshold', trueMeaning: `${left} below ${right}`,  falseMeaning: `${left} ${eop} ${right}` }
+    }
+
+    // Numeric literal
+    const rhsId = right.replace('.', '_')
+    return isGt
+      ? { name: base + 'Above' + capitalize(rhsId), trueMeaning: `${left} ${eop} ${right}`, falseMeaning: `${left} not above ${right}` }
+      : { name: base + 'Below' + capitalize(rhsId), trueMeaning: `${left} ${eop} ${right}`, falseMeaning: `${left} not below ${right}` }
   }
 
   // Generic fallback
@@ -179,6 +203,11 @@ function pathToIdent(text: string): string {
   const parts = s.split('.').filter(Boolean)
   if (parts.length === 0) return camelize(s)
   return parts[0] + parts.slice(1).map(capitalize).join('')
+}
+
+function negateOp(op: string): string {
+  const map: Record<string, string> = { '>': '<=', '>=': '<', '<': '>=', '<=': '>' }
+  return map[op] ?? op
 }
 
 function stripLeadingNot(text: string): string {

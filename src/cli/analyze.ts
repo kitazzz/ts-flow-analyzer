@@ -168,9 +168,13 @@ function prettyPrintDecisionTables(reports: FunctionReportWithNode[]): void {
     console.log(`  T=true  F=false  *=not evaluated`)
 
     // Build lookup: raw predicate text → normalizedName (from atomic predicates)
+    // For negated predicates (negated=true, text='order'), also register '!order'
+    // so decision table predicates like '!order' can find the alias.
     const normMap = new Map<string, string>()
     for (const p of r.predicates ?? []) {
-      if (p.normalizedName) normMap.set(p.text, p.normalizedName)
+      if (!p.normalizedName) continue
+      normMap.set(p.text, p.normalizedName)
+      if (p.negated) normMap.set('!' + p.text, p.normalizedName)
     }
 
     console.log(`\n  Predicates`)
