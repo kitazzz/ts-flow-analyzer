@@ -1,18 +1,18 @@
-pub mod model;
 pub mod classify;
 pub mod collect_calls;
 pub mod collect_imports;
-pub mod resolve;
 pub mod dot;
+pub mod model;
+pub mod resolve;
 
 use oxc_ast::ast::{Program, Statement};
 
 use crate::ast::collect_functions::{CollectedFunction, FunctionNode};
 
-use model::{CallCategory, CallEdge, CallGraphData, CallGraphNode};
 use classify::classify_call;
 use collect_calls::collect_calls;
 use collect_imports::collect_imports;
+use model::{CallCategory, CallEdge, CallGraphData, CallGraphNode};
 use resolve::resolve_call;
 
 fn get_statements<'a>(node: &'a FunctionNode<'a>) -> Option<&'a [Statement<'a>]> {

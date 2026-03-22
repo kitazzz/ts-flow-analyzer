@@ -200,7 +200,12 @@ fn collect_from_expr(expr: &Expression<'_>, source: &str, out: &mut Vec<CallSite
     }
 }
 
-fn classify_call(callee: &Expression<'_>, source: &str, call_start: u32, call_end: u32) -> CallSite {
+fn classify_call(
+    callee: &Expression<'_>,
+    source: &str,
+    call_start: u32,
+    call_end: u32,
+) -> CallSite {
     let callee_text = source_text(source, call_start, call_end);
     let line = span_line(source, call_start);
 
@@ -216,7 +221,8 @@ fn classify_call(callee: &Expression<'_>, source: &str, call_start: u32, call_en
         // obj.method() or this.method() or this.repo.method()
         Expression::StaticMemberExpression(member) => {
             let property = member.property.name.to_string();
-            let receiver_text = source_text(source, member.object.span().start, member.object.span().end);
+            let receiver_text =
+                source_text(source, member.object.span().start, member.object.span().end);
             if receiver_text == "this" {
                 CallSite {
                     kind: CallKind::ThisMethod,
@@ -245,7 +251,8 @@ fn classify_call(callee: &Expression<'_>, source: &str, call_start: u32, call_en
         }
         // obj[expr]() or other dynamic patterns
         Expression::ComputedMemberExpression(member) => {
-            let receiver_text = source_text(source, member.object.span().start, member.object.span().end);
+            let receiver_text =
+                source_text(source, member.object.span().start, member.object.span().end);
             CallSite {
                 kind: CallKind::MemberCall,
                 callee_text,

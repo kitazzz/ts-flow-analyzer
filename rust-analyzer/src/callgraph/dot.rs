@@ -112,11 +112,7 @@ fn reachable_from<'a>(entry: &str, graph: &'a CallGraphData) -> BTreeSet<&'a str
         if !is_known {
             continue;
         }
-        let node_ref = graph
-            .nodes
-            .iter()
-            .find(|n| n.symbol_name == node)
-            .unwrap();
+        let node_ref = graph.nodes.iter().find(|n| n.symbol_name == node).unwrap();
         if !visited.insert(node_ref.symbol_name.as_str()) {
             continue;
         }

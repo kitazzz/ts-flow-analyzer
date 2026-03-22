@@ -33,7 +33,11 @@ fn derive_truthiness(text: &str, negated: bool) -> (String, String, String) {
     let base = path_to_ident(text);
 
     // Use the raw text's last dot segment to detect boolean-ness
-    let raw_leaf = last_dot_segment(text.trim().trim_start_matches("await ").trim_start_matches("this."));
+    let raw_leaf = last_dot_segment(
+        text.trim()
+            .trim_start_matches("await ")
+            .trim_start_matches("this."),
+    );
 
     // Category C: already-meaningful boolean names (has*, is*, can*, should*, etc.)
     // Use as-is without appending Exists/Missing
@@ -96,9 +100,8 @@ fn derive_truthiness(text: &str, negated: bool) -> (String, String, String) {
 /// Check if a name is an already-meaningful boolean (has*, is*, can*, should*, etc.)
 fn is_boolean_named(name: &str) -> bool {
     let prefixes = [
-        "has", "is", "can", "should", "will", "did", "was", "are",
-        "does", "do", "needs", "allows", "requires", "includes",
-        "contains", "exists", "matches", "supports", "enables",
+        "has", "is", "can", "should", "will", "did", "was", "are", "does", "do", "needs", "allows",
+        "requires", "includes", "contains", "exists", "matches", "supports", "enables",
     ];
     let lower = name.to_lowercase();
     for prefix in &prefixes {
@@ -117,10 +120,27 @@ fn is_boolean_named(name: &str) -> bool {
 fn is_boolean_leaf(name: &str) -> bool {
     // Known boolean property names
     let boolean_props = [
-        "ok", "valid", "enabled", "disabled", "active", "inactive",
-        "visible", "hidden", "locked", "unlocked", "done", "ready",
-        "success", "failed", "approved", "rejected", "confirmed",
-        "verified", "authenticated", "authorized", "completed",
+        "ok",
+        "valid",
+        "enabled",
+        "disabled",
+        "active",
+        "inactive",
+        "visible",
+        "hidden",
+        "locked",
+        "unlocked",
+        "done",
+        "ready",
+        "success",
+        "failed",
+        "approved",
+        "rejected",
+        "confirmed",
+        "verified",
+        "authenticated",
+        "authorized",
+        "completed",
     ];
     let lower = name.to_lowercase();
     if boolean_props.contains(&lower.as_str()) {
@@ -131,7 +151,9 @@ fn is_boolean_leaf(name: &str) -> bool {
         return true;
     }
     // Boolean-action suffixes: forceApprove, skipValidation, allowOverride, etc.
-    let boolean_prefixes = ["force", "skip", "allow", "prevent", "disable", "enable", "ignore"];
+    let boolean_prefixes = [
+        "force", "skip", "allow", "prevent", "disable", "enable", "ignore",
+    ];
     for prefix in &boolean_prefixes {
         if lower.starts_with(prefix) {
             let rest = &name[prefix.len()..];
@@ -287,9 +309,17 @@ fn derive_comparison(text: &str, negated: bool) -> Result<(String, String, Strin
         let effective_gt = if negated { !gt_op } else { gt_op };
         if right == "0" {
             return Ok(if effective_gt {
-                (format!("{}NonEmpty", subject), format!("{} > 0", left), format!("{} is 0", left))
+                (
+                    format!("{}NonEmpty", subject),
+                    format!("{} > 0", left),
+                    format!("{} is 0", left),
+                )
             } else {
-                (format!("{}Empty", subject), format!("{} is 0", left), format!("{} > 0", left))
+                (
+                    format!("{}Empty", subject),
+                    format!("{} is 0", left),
+                    format!("{} > 0", left),
+                )
             });
         }
         let right_camel = camelize(&right);
@@ -321,14 +351,30 @@ fn derive_comparison(text: &str, negated: bool) -> Result<(String, String, Strin
         if right == "0" {
             return Ok(if is_gt {
                 if is_strict {
-                    (format!("{}Positive", base), format!("{} > 0", left), format!("{} <= 0", left))
+                    (
+                        format!("{}Positive", base),
+                        format!("{} > 0", left),
+                        format!("{} <= 0", left),
+                    )
                 } else {
-                    (format!("{}NonNegative", base), format!("{} >= 0", left), format!("{} < 0", left))
+                    (
+                        format!("{}NonNegative", base),
+                        format!("{} >= 0", left),
+                        format!("{} < 0", left),
+                    )
                 }
             } else if is_strict {
-                (format!("{}Negative", base), format!("{} < 0", left), format!("{} >= 0", left))
+                (
+                    format!("{}Negative", base),
+                    format!("{} < 0", left),
+                    format!("{} >= 0", left),
+                )
             } else {
-                (format!("{}ZeroOrBelow", base), format!("{} <= 0", left), format!("{} > 0", left))
+                (
+                    format!("{}ZeroOrBelow", base),
+                    format!("{} <= 0", left),
+                    format!("{} > 0", left),
+                )
             });
         }
 
@@ -392,9 +438,7 @@ fn parse_comparison(text: &str) -> Option<(String, String, String)> {
 
 fn parse_string_literal(s: &str) -> Option<String> {
     let s = s.trim();
-    if (s.starts_with('\'') && s.ends_with('\''))
-        || (s.starts_with('"') && s.ends_with('"'))
-    {
+    if (s.starts_with('\'') && s.ends_with('\'')) || (s.starts_with('"') && s.ends_with('"')) {
         Some(s[1..s.len() - 1].to_string())
     } else {
         None
@@ -404,7 +448,10 @@ fn parse_string_literal(s: &str) -> Option<String> {
 fn derive_call(text: &str, negated: bool) -> (String, String, String) {
     // e.g. `canTransition(order.status, 'approved')`
     let stripped = text.trim_start_matches("await").trim();
-    let stripped = stripped.trim_start_matches("this.").trim_start_matches("await").trim();
+    let stripped = stripped
+        .trim_start_matches("this.")
+        .trim_start_matches("await")
+        .trim();
     // Find function name before first '('
     let fn_name = if let Some(paren_pos) = stripped.find('(') {
         let before = &stripped[..paren_pos];
@@ -493,7 +540,10 @@ fn path_to_ident(text: &str) -> String {
     // Strip array indexing
     let s = strip_bracket_indexing(&s);
     // Stop at operator or paren
-    let s = s.split(|c: char| c == ' ' || c == '!' || c == '<' || c == '>' || c == '=' || c == '(' || c == ')')
+    let s = s
+        .split(|c: char| {
+            c == ' ' || c == '!' || c == '<' || c == '>' || c == '=' || c == '(' || c == ')'
+        })
         .next()
         .unwrap_or(&s)
         .to_string();
@@ -514,7 +564,11 @@ fn strip_bracket_indexing(s: &str) -> String {
     for ch in s.chars() {
         match ch {
             '[' => depth += 1,
-            ']' => { if depth > 0 { depth -= 1; } }
+            ']' => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+            }
             _ => {
                 if depth == 0 {
                     result.push(ch);
@@ -548,7 +602,9 @@ fn strip_leading_not(text: &str) -> String {
 
 fn camelize(s: &str) -> String {
     let s = s.trim();
-    let parts: Vec<&str> = s.split(|c: char| c == ' ' || c == '_' || c == '-').collect();
+    let parts: Vec<&str> = s
+        .split(|c: char| c == ' ' || c == '_' || c == '-')
+        .collect();
     parts
         .iter()
         .enumerate()

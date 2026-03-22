@@ -17,10 +17,14 @@ fn walk_stmt_nesting(stmt: &Statement<'_>, current_depth: u32, _is_root: bool) -
             let depth = current_depth + 1;
             let mut max = depth;
             let d = walk_stmt_nesting(&if_stmt.consequent, depth, false);
-            if d > max { max = d; }
+            if d > max {
+                max = d;
+            }
             if let Some(alt) = &if_stmt.alternate {
                 let d = walk_stmt_nesting(alt, depth, false);
-                if d > max { max = d; }
+                if d > max {
+                    max = d;
+                }
             }
             max
         }
@@ -30,7 +34,9 @@ fn walk_stmt_nesting(stmt: &Statement<'_>, current_depth: u32, _is_root: bool) -
             for case in &sw.cases {
                 for s in &case.consequent {
                     let d = walk_stmt_nesting(s, depth, false);
-                    if d > max { max = d; }
+                    if d > max {
+                        max = d;
+                    }
                 }
             }
             max
@@ -65,18 +71,24 @@ fn walk_stmt_nesting(stmt: &Statement<'_>, current_depth: u32, _is_root: bool) -
             let mut max = depth;
             for s in &t.block.body {
                 let d = walk_stmt_nesting(s, depth, false);
-                if d > max { max = d; }
+                if d > max {
+                    max = d;
+                }
             }
             if let Some(handler) = &t.handler {
                 for s in &handler.body.body {
                     let d = walk_stmt_nesting(s, depth, false);
-                    if d > max { max = d; }
+                    if d > max {
+                        max = d;
+                    }
                 }
             }
             if let Some(fin) = &t.finalizer {
                 for s in &fin.body {
                     let d = walk_stmt_nesting(s, depth, false);
-                    if d > max { max = d; }
+                    if d > max {
+                        max = d;
+                    }
                 }
             }
             max
@@ -85,7 +97,9 @@ fn walk_stmt_nesting(stmt: &Statement<'_>, current_depth: u32, _is_root: bool) -
             let mut max = current_depth;
             for s in &block.body {
                 let d = walk_stmt_nesting(s, current_depth, false);
-                if d > max { max = d; }
+                if d > max {
+                    max = d;
+                }
             }
             max
         }
@@ -99,7 +113,9 @@ fn walk_stmt_nesting(stmt: &Statement<'_>, current_depth: u32, _is_root: bool) -
             for decl in &var_decl.declarations {
                 if let Some(init) = &decl.init {
                     let d = walk_expr_nesting(init, current_depth);
-                    if d > max { max = d; }
+                    if d > max {
+                        max = d;
+                    }
                 }
             }
             max

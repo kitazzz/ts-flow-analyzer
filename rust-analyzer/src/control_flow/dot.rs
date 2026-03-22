@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, VecDeque};
 
-use oxc_cfg::EdgeType;
 use oxc_cfg::graph::visit::EdgeRef;
+use oxc_cfg::EdgeType;
 use oxc_semantic::dot::DebugDot;
 use oxc_span::GetSpan;
 
@@ -60,7 +60,11 @@ pub fn render_cfg_dot(ctx: &CfgContext<'_>, node: &FunctionNode<'_>) -> Option<S
             .collect::<Vec<_>>()
             .join("\\n");
 
-        dot.push_str(&format!("    {} [ label=\"{}\"", basic_block_id, escape_dot(&label)));
+        dot.push_str(&format!(
+            "    {} [ label=\"{}\"",
+            basic_block_id,
+            escape_dot(&label)
+        ));
         if basic_block.is_unreachable() {
             dot.push_str(", style=\"dotted\"");
         }
@@ -88,7 +92,9 @@ pub fn render_cfg_dot(ctx: &CfgContext<'_>, node: &FunctionNode<'_>) -> Option<S
                 escape_dot(&format!("{:?}", edge.weight()))
             ));
 
-            if matches!(edge.weight(), EdgeType::Unreachable) || cfg.basic_block(*from).is_unreachable() {
+            if matches!(edge.weight(), EdgeType::Unreachable)
+                || cfg.basic_block(*from).is_unreachable()
+            {
                 dot.push_str(", style=\"dotted\"");
             }
 
@@ -109,9 +115,9 @@ pub fn render_cfg_dot(ctx: &CfgContext<'_>, node: &FunctionNode<'_>) -> Option<S
 
 fn find_block_by_span(ctx: &CfgContext<'_>, span: oxc_span::Span) -> Option<oxc_cfg::BlockNodeId> {
     let nodes = ctx.semantic.nodes();
-    nodes
-        .iter_enumerated()
-        .find_map(|(node_id, ast_node)| (ast_node.kind().span() == span).then(|| nodes.cfg_id(node_id)))
+    nodes.iter_enumerated().find_map(|(node_id, ast_node)| {
+        (ast_node.kind().span() == span).then(|| nodes.cfg_id(node_id))
+    })
 }
 
 fn escape_dot(value: &str) -> String {

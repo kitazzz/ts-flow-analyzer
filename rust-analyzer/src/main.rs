@@ -1,6 +1,7 @@
 mod ast;
 mod callgraph;
 mod cli;
+mod config;
 mod control_flow;
 mod decision;
 mod effects;
@@ -10,27 +11,35 @@ mod model;
 mod parser;
 mod predicates;
 
-use std::path::Path;
 use clap::Parser;
 use oxc_allocator::Allocator;
 use oxc_parser::Parser as OxcParser;
 use oxc_span::SourceType;
+use std::path::Path;
 
 use ast::collect_functions::{collect_functions, FunctionNode};
+use callgraph::build_call_graph;
 use cli::Cli;
-use model::{FunctionMetrics, FunctionReport, SymbolKind};
+use config::load_config;
+use decision::table::build_decision_table;
+use effects::extract::extract_effects;
 use metrics::complexity::analyze_basic_complexity;
-use metrics::nesting::analyze_max_nesting_depth;
 use metrics::cyclomatic::analyze_cyclomatic_complexity;
 use metrics::function_nesting::analyze_function_nesting;
+use metrics::nesting::analyze_max_nesting_depth;
+use model::{FunctionMetrics, FunctionReport, SymbolKind};
 use predicates::extract::extract_predicates;
 use predicates::normalize::normalize_predicates;
-use effects::extract::extract_effects;
-use decision::table::build_decision_table;
-use callgraph::build_call_graph;
 
 fn main() {
     let cli = Cli::parse();
+    let config = match load_config(cli.config.as_deref()) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("{err}");
+            std::process::exit(1);
+        }
+    };
 
     let path = Path::new(&cli.file);
     let source = match parser::load_source::load_source(path) {
@@ -79,7 +88,9 @@ fn main() {
         #[cfg(feature = "cfg-analysis")]
         {
             if matches!(_target.node, FunctionNode::Class(_)) {
-                eprintln!("error: --cfg-dot does not support class symbols; choose a function or method");
+                eprintln!(
+                    "error: --cfg-dot does not support class symbols; choose a function or method"
+                );
                 std::process::exit(1);
             }
             let dot = cfg_ctx
@@ -163,6 +174,7 @@ fn main() {
                 &func.symbol_name,
                 &func.symbol_kind.to_string(),
                 &source,
+                &config.decision_table,
                 cli.decision_enhanced,
                 #[cfg(feature = "cfg-analysis")]
                 cfg_ctx.as_ref().filter(|_| cli.decision_enhanced),
@@ -171,7 +183,10 @@ fn main() {
             None
         };
 
-        let function_name = func.member_name.clone().unwrap_or_else(|| func.symbol_name.clone());
+        let function_name = func
+            .member_name
+            .clone()
+            .unwrap_or_else(|| func.symbol_name.clone());
 
         reports.push(FunctionReport {
             symbol_name: func.symbol_name.clone(),
@@ -190,7 +205,8 @@ fn main() {
 
     if cli.json {
         let result = if include_call_graph {
-            let graph = build_call_graph(&collected, &ret.program, &source, cli.include_builtin_calls);
+            let graph =
+                build_call_graph(&collected, &ret.program, &source, cli.include_builtin_calls);
             serde_json::json!({
                 "functions": reports,
                 "callGraph": graph,
@@ -213,15 +229,27 @@ fn main() {
             let m = &report.metrics;
             println!("  Metrics:");
             println!("    cyclomatic: {}", m.cyclomatic_complexity);
-            println!("    if: {}, else-if: {}, switch: {}, ternary: {}", m.if_count, m.else_if_count, m.switch_count, m.ternary_count);
-            println!("    returns: {}, max nesting: {}", m.return_count, m.max_nesting_depth);
-            println!("    local fns: {}, fn depth: {}, callback depth: {}", m.local_function_count, m.function_nesting_depth, m.callback_nesting_depth);
+            println!(
+                "    if: {}, else-if: {}, switch: {}, ternary: {}",
+                m.if_count, m.else_if_count, m.switch_count, m.ternary_count
+            );
+            println!(
+                "    returns: {}, max nesting: {}",
+                m.return_count, m.max_nesting_depth
+            );
+            println!(
+                "    local fns: {}, fn depth: {}, callback depth: {}",
+                m.local_function_count, m.function_nesting_depth, m.callback_nesting_depth
+            );
 
             if let Some(preds) = &report.predicates {
                 println!("  Predicates ({}):", preds.len());
                 for p in preds {
                     let neg = if p.negated { "!" } else { "" };
-                    println!("    [{:?}] {}{} ({:?}) @ line {}", p.context, neg, p.text, p.kind, p.line);
+                    println!(
+                        "    [{:?}] {}{} ({:?}) @ line {}",
+                        p.context, neg, p.text, p.kind, p.line
+                    );
                     if let Some(name) = &p.normalized_name {
                         println!("      -> {}", name);
                     }
@@ -231,7 +259,13 @@ fn main() {
             if let Some(effs) = &report.effects {
                 println!("  Effects ({}):", effs.len());
                 for e in effs {
-                    println!("    {:?}/{:?} @ line {}: {}", e.kind, e.side_effect, e.line, &e.text[..e.text.len().min(60)]);
+                    println!(
+                        "    {:?}/{:?} @ line {}: {}",
+                        e.kind,
+                        e.side_effect,
+                        e.line,
+                        &e.text[..e.text.len().min(60)]
+                    );
                 }
             }
 
@@ -242,12 +276,8 @@ fn main() {
 
 fn get_statements<'a>(node: &'a FunctionNode<'a>) -> Option<&'a [oxc_ast::ast::Statement<'a>]> {
     match node {
-        FunctionNode::Function(f) => {
-            f.body.as_ref().map(|b| b.statements.as_slice())
-        }
-        FunctionNode::Arrow(arrow) => {
-            Some(arrow.body.statements.as_slice())
-        }
+        FunctionNode::Function(f) => f.body.as_ref().map(|b| b.statements.as_slice()),
+        FunctionNode::Arrow(arrow) => Some(arrow.body.statements.as_slice()),
         FunctionNode::Class(_) => None,
     }
 }

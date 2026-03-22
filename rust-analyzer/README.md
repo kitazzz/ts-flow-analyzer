@@ -112,8 +112,11 @@ rf-analyze [OPTIONS] <FILE>
 
 `<FILE>` は解析対象のソースファイルです。実装上はファイル拡張子から `SourceType` を判定しています。現状のサンプルと主用途は `.ts` です。
 
+`config.yaml` がカレントディレクトリにあれば自動で読み込みます。別パスを使う場合は `--config <PATH>` を指定します。
+
 ### オプション
 
+- `--config <PATH>`: analyzer 設定 YAML を明示指定する
 - `--json`: JSON で出力する
 - `--predicates`: predicate を含める
 - `--effects`: effect を含める
@@ -163,6 +166,12 @@ CFG 拡張付き decision table を JSON で出す:
 
 ```sh
 rf-analyze ../samples/usecase/approveOrder.ts --decision --decision-enhanced --json
+```
+
+config を明示して decision table を出す:
+
+```sh
+rf-analyze ../samples/usecase/approveOrder.ts --decision --json --config ./config.yaml
 ```
 
 call graph を JSON で見る:
@@ -292,6 +301,35 @@ JSON では各シンボルごとに `FunctionReport` 相当のオブジェクト
 - `truthRows`: 経路ごとの真理値と outcome
 - `mcdcCases`: predicate ごとの witness pair
 - `happyPath`: 成功経路
+
+### config.yaml
+
+decision table の `happyPath` 判定と `Success` / `Failure` ラベルは `config.yaml` で調整できます。
+
+例:
+
+```yaml
+decision_table:
+  success_when_true:
+    - ok
+    - allowed
+    - success
+  failure_when_false:
+    - ok
+    - allowed
+    - success
+  failure_when_present:
+    - error
+    - reason
+```
+
+意味:
+
+- `success_when_true`: `return { ok: true }` のように、`true` なら成功とみなすキー
+- `failure_when_false`: `return { ok: false }` のように、`false` なら失敗とみなすキー
+- `failure_when_present`: `return { error: '...' }` のように、キーが存在したら失敗とみなすキー
+
+未指定時は上のデフォルトが使われます。サンプルは [config.yaml.example](/Users/kitazzz/.superset/projects/recast-forge/rust-analyzer/config.yaml.example) にあります。
 
 この出力は厳密な形式検証としての strict MC/DC ではなく、現状は branch-sensitive な近似出力です。
 

@@ -1,6 +1,6 @@
+use crate::model::PredicateKind;
 use oxc_ast::ast::*;
 use oxc_span::GetSpan;
-use crate::model::PredicateKind;
 
 pub fn classify_predicate(expr: &Expression<'_>, source: &str) -> PredicateKind {
     match expr {

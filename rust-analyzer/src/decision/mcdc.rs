@@ -1,4 +1,4 @@
-use crate::model::{DecisionPoint, TruthRow, McdcCase};
+use crate::model::{DecisionPoint, McdcCase, TruthRow};
 
 pub fn build_mcdc_cases(decisions: &[DecisionPoint], rows: &[TruthRow]) -> Vec<McdcCase> {
     let mut cases = Vec::new();

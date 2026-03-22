@@ -1,5 +1,5 @@
-use oxc_ast::ast::*;
 use crate::model::SymbolKind;
+use oxc_ast::ast::*;
 
 /// A reference to a function node we want to analyze.
 #[derive(Debug)]
@@ -21,12 +21,8 @@ impl<'a> FunctionNode<'a> {
     pub fn first_stmt_span(&self) -> Option<oxc_span::Span> {
         use oxc_span::GetSpan;
         match self {
-            FunctionNode::Function(f) => {
-                f.body.as_ref()?.statements.first().map(|s| s.span())
-            }
-            FunctionNode::Arrow(a) => {
-                a.body.statements.first().map(|s| s.span())
-            }
+            FunctionNode::Function(f) => f.body.as_ref()?.statements.first().map(|s| s.span()),
+            FunctionNode::Arrow(a) => a.body.statements.first().map(|s| s.span()),
             FunctionNode::Class(_) => None,
         }
     }
@@ -49,7 +45,11 @@ pub fn collect_functions<'a>(program: &'a Program<'a>, source: &str) -> Vec<Coll
 }
 
 fn span_line(source: &str, start: u32) -> u32 {
-    source[..start as usize].bytes().filter(|b| *b == b'\n').count() as u32 + 1
+    source[..start as usize]
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count() as u32
+        + 1
 }
 
 fn collect_from_statements<'a>(
@@ -115,28 +115,26 @@ fn collect_from_statement<'a>(
                 }
             }
         }
-        Statement::ExportDefaultDeclaration(export) => {
-            match &export.declaration {
-                ExportDefaultDeclarationKind::FunctionDeclaration(func) => {
-                    if let Some(id) = &func.id {
-                        let name = id.name.to_string();
-                        let line = span_line(source, func.span.start);
-                        results.push(CollectedFunction {
-                            symbol_name: name.clone(),
-                            symbol_kind: SymbolKind::Function,
-                            class_name: None,
-                            member_name: Some(name),
-                            node: FunctionNode::Function(func),
-                            start_line: line,
-                        });
-                    }
+        Statement::ExportDefaultDeclaration(export) => match &export.declaration {
+            ExportDefaultDeclarationKind::FunctionDeclaration(func) => {
+                if let Some(id) = &func.id {
+                    let name = id.name.to_string();
+                    let line = span_line(source, func.span.start);
+                    results.push(CollectedFunction {
+                        symbol_name: name.clone(),
+                        symbol_kind: SymbolKind::Function,
+                        class_name: None,
+                        member_name: Some(name),
+                        node: FunctionNode::Function(func),
+                        start_line: line,
+                    });
                 }
-                ExportDefaultDeclarationKind::ClassDeclaration(class) => {
-                    collect_from_class(class, source, results);
-                }
-                _ => {}
             }
-        }
+            ExportDefaultDeclarationKind::ClassDeclaration(class) => {
+                collect_from_class(class, source, results);
+            }
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -186,7 +184,11 @@ fn collect_from_class<'a>(
     source: &str,
     results: &mut Vec<CollectedFunction<'a>>,
 ) {
-    let class_name = class.id.as_ref().map(|id| id.name.to_string()).unwrap_or_default();
+    let class_name = class
+        .id
+        .as_ref()
+        .map(|id| id.name.to_string())
+        .unwrap_or_default();
     if !class_name.is_empty() {
         let line = span_line(source, class.span.start);
         results.push(CollectedFunction {
@@ -217,7 +219,11 @@ fn collect_from_class<'a>(
                 results.push(CollectedFunction {
                     symbol_name: symbol_name.clone(),
                     symbol_kind: SymbolKind::Method,
-                    class_name: if !class_name.is_empty() { Some(class_name.clone()) } else { None },
+                    class_name: if !class_name.is_empty() {
+                        Some(class_name.clone())
+                    } else {
+                        None
+                    },
                     member_name: Some(method_name),
                     node: FunctionNode::Function(&method.value),
                     start_line: line,

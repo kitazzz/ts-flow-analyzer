@@ -1,5 +1,5 @@
-use oxc_ast::ast::*;
 use crate::model::{Effect, EffectKind, SideEffectClass};
+use oxc_ast::ast::*;
 
 pub fn extract_effects(stmts: &[Statement<'_>], source: &str) -> Vec<Effect> {
     let mut results = Vec::new();
@@ -10,13 +10,19 @@ pub fn extract_effects(stmts: &[Statement<'_>], source: &str) -> Vec<Effect> {
 }
 
 fn span_line(source: &str, start: u32) -> u32 {
-    source[..start as usize].bytes().filter(|b| *b == b'\n').count() as u32 + 1
+    source[..start as usize]
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count() as u32
+        + 1
 }
 
 fn extract_from_stmt(stmt: &Statement<'_>, source: &str, out: &mut Vec<Effect>) {
     match stmt {
         Statement::ReturnStatement(ret) => {
-            let text = source[ret.span.start as usize..ret.span.end as usize].trim().to_string();
+            let text = source[ret.span.start as usize..ret.span.end as usize]
+                .trim()
+                .to_string();
             let line = span_line(source, ret.span.start);
             out.push(Effect {
                 kind: EffectKind::Return,
@@ -26,7 +32,9 @@ fn extract_from_stmt(stmt: &Statement<'_>, source: &str, out: &mut Vec<Effect>) 
             });
         }
         Statement::ThrowStatement(thr) => {
-            let text = source[thr.span.start as usize..thr.span.end as usize].trim().to_string();
+            let text = source[thr.span.start as usize..thr.span.end as usize]
+                .trim()
+                .to_string();
             let line = span_line(source, thr.span.start);
             out.push(Effect {
                 kind: EffectKind::Throw,
@@ -190,7 +198,9 @@ fn is_match_log(text: &str) -> bool {
 }
 
 fn is_match_db_write(text: &str) -> bool {
-    for keyword in &["save", "update", "delete", "remove", "insert", "upsert", "create", "put", "patch"] {
+    for keyword in &[
+        "save", "update", "delete", "remove", "insert", "upsert", "create", "put", "patch",
+    ] {
         if matches_keyword(text, keyword) {
             return true;
         }
@@ -199,7 +209,9 @@ fn is_match_db_write(text: &str) -> bool {
 }
 
 fn is_match_db_read(text: &str) -> bool {
-    for keyword in &["find", "get", "query", "fetch", "load", "select", "search", "list"] {
+    for keyword in &[
+        "find", "get", "query", "fetch", "load", "select", "search", "list",
+    ] {
         if matches_keyword(text, keyword) {
             return true;
         }
@@ -208,7 +220,9 @@ fn is_match_db_read(text: &str) -> bool {
 }
 
 fn is_match_external(text: &str) -> bool {
-    for keyword in &["http", "axios", "request", "post", "send", "publish", "emit", "notify", "dispatch"] {
+    for keyword in &[
+        "http", "axios", "request", "post", "send", "publish", "emit", "notify", "dispatch",
+    ] {
         if matches_keyword(text, keyword) {
             return true;
         }

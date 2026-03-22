@@ -1,5 +1,5 @@
-use oxc_span::{GetSpan, Span};
 use super::context::CfgContext;
+use oxc_span::{GetSpan, Span};
 
 /// Check if a basic block (identified by the span of the statement it contains)
 /// has been marked unreachable by the CFG builder.

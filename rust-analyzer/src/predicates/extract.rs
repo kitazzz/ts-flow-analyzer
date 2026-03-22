@@ -1,7 +1,7 @@
+use super::classify::classify_predicate;
+use crate::model::{AtomicPredicate, DecisionContext};
 use oxc_ast::ast::*;
 use oxc_span::GetSpan;
-use crate::model::{AtomicPredicate, DecisionContext};
-use super::classify::classify_predicate;
 
 pub fn extract_predicates(stmts: &[Statement<'_>], source: &str) -> Vec<AtomicPredicate> {
     let mut results = Vec::new();
@@ -12,7 +12,11 @@ pub fn extract_predicates(stmts: &[Statement<'_>], source: &str) -> Vec<AtomicPr
 }
 
 fn span_line(source: &str, start: u32) -> u32 {
-    source[..start as usize].bytes().filter(|b| *b == b'\n').count() as u32 + 1
+    source[..start as usize]
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count() as u32
+        + 1
 }
 
 fn extract_from_stmt(
@@ -30,7 +34,13 @@ fn extract_from_stmt(
                 match alt {
                     Statement::IfStatement(nested_if) => {
                         // else-if: collect with ElseIf context
-                        collect_from_expr(&nested_if.test, DecisionContext::ElseIf, false, source, out);
+                        collect_from_expr(
+                            &nested_if.test,
+                            DecisionContext::ElseIf,
+                            false,
+                            source,
+                            out,
+                        );
                         extract_from_stmt(&nested_if.consequent, source, out, false);
                         if let Some(nested_alt) = &nested_if.alternate {
                             extract_from_stmt(nested_alt, source, out, false);
@@ -114,7 +124,11 @@ fn extract_from_stmt(
 }
 
 /// Extract ternary conditions from expression (not function bodies)
-fn extract_conditionals_from_expr(expr: &Expression<'_>, source: &str, out: &mut Vec<AtomicPredicate>) {
+fn extract_conditionals_from_expr(
+    expr: &Expression<'_>,
+    source: &str,
+    out: &mut Vec<AtomicPredicate>,
+) {
     match expr {
         Expression::ConditionalExpression(cond) => {
             collect_from_expr(&cond.test, DecisionContext::Ternary, false, source, out);
@@ -129,15 +143,25 @@ fn extract_conditionals_from_expr(expr: &Expression<'_>, source: &str, out: &mut
             extract_conditionals_from_expr(&call.callee, source, out);
             for arg in &call.arguments {
                 match arg {
-                    Argument::SpreadElement(spread) => extract_conditionals_from_expr(&spread.argument, source, out),
+                    Argument::SpreadElement(spread) => {
+                        extract_conditionals_from_expr(&spread.argument, source, out)
+                    }
                     e => extract_conditionals_from_expr(e.to_expression(), source, out),
                 }
             }
         }
-        Expression::AwaitExpression(aw) => extract_conditionals_from_expr(&aw.argument, source, out),
-        Expression::TSNonNullExpression(inner) => extract_conditionals_from_expr(&inner.expression, source, out),
-        Expression::TSAsExpression(inner) => extract_conditionals_from_expr(&inner.expression, source, out),
-        Expression::ParenthesizedExpression(inner) => extract_conditionals_from_expr(&inner.expression, source, out),
+        Expression::AwaitExpression(aw) => {
+            extract_conditionals_from_expr(&aw.argument, source, out)
+        }
+        Expression::TSNonNullExpression(inner) => {
+            extract_conditionals_from_expr(&inner.expression, source, out)
+        }
+        Expression::TSAsExpression(inner) => {
+            extract_conditionals_from_expr(&inner.expression, source, out)
+        }
+        Expression::ParenthesizedExpression(inner) => {
+            extract_conditionals_from_expr(&inner.expression, source, out)
+        }
         // Don't recurse into function bodies
         Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_) => {}
         _ => {}
@@ -173,7 +197,9 @@ fn collect_from_expr(
         }
         // Leaf - classify and record
         _ => {
-            let text = source[expr.span().start as usize..expr.span().end as usize].trim().to_string();
+            let text = source[expr.span().start as usize..expr.span().end as usize]
+                .trim()
+                .to_string();
             let line = span_line(source, expr.span().start);
             let kind = classify_predicate(expr, source);
             out.push(AtomicPredicate {

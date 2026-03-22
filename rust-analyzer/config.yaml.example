@@ -1,0 +1,12 @@
+decision_table:
+  success_when_true:
+    - ok
+    - allowed
+    - success
+  failure_when_false:
+    - ok
+    - allowed
+    - success
+  failure_when_present:
+    - error
+    - reason

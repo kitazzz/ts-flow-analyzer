@@ -6,6 +6,10 @@ pub struct Cli {
     /// Input file to analyze
     pub file: String,
 
+    /// Path to analyzer config YAML. If omitted, ./config.yaml is loaded when present.
+    #[arg(long, value_name = "PATH")]
+    pub config: Option<String>,
+
     /// Output JSON
     #[arg(long)]
     pub json: bool,
