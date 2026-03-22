@@ -67,8 +67,9 @@ fn main() {
     let file_path = path.to_string_lossy().to_string();
     let collected = collect_functions(&ret.program, &source);
 
-    // Build CFG context when needed (cfg-analysis feature + --decision-enhanced or --cfg-dot)
-    let _need_cfg = cli.decision_enhanced || cli.cfg_dot.is_some();
+    // Build CFG context when needed (cfg-analysis feature + --decision-enhanced, --cfg-dot, or --graph)
+    let _need_cfg = cli.decision_enhanced || cli.cfg_dot.is_some()
+        || cli.graph || cli.graph_dot.is_some();
 
     #[cfg(feature = "cfg-analysis")]
     let cfg_ctx = _need_cfg.then(|| control_flow::build_cfg_context(&ret.program));
@@ -129,6 +130,56 @@ fn main() {
             Some(entrypoint.as_str())
         };
         let dot = callgraph::dot::render_call_graph_dot(&graph, entry);
+        println!("{dot}");
+        return;
+    }
+
+    // Handle --graph-dot: build graph, render DOT, and exit
+    if let Some(ref fn_name) = cli.graph_dot {
+        let target = collected.iter().find(|f| &f.symbol_name == fn_name);
+        let Some(_target) = target else {
+            let available: Vec<&str> = collected.iter().map(|f| f.symbol_name.as_str()).collect();
+            eprintln!(
+                "error: function '{}' not found in file. Available: {}",
+                fn_name,
+                available.join(", ")
+            );
+            std::process::exit(1);
+        };
+        // Build graph for the whole file, then render DOT filtered to the function
+        let mut builder = ir::builder::GraphBuilder::new();
+        let symbol_map = ir::from_functions::functions_to_graph(&collected, &mut builder);
+        let cg = build_call_graph(&collected, &ret.program, &source, cli.include_builtin_calls);
+        ir::from_callgraph::callgraph_to_graph(&cg, &symbol_map, &mut builder);
+        // Decision tables (gated by --decision / --all)
+        if include_decision {
+        for func in &collected {
+            if matches!(func.node, FunctionNode::Class(_)) { continue; }
+            if let Some(dt) = build_decision_table(
+                &func.node, &func.symbol_name, &func.symbol_kind.to_string(),
+                &source, &config.decision_table, cli.decision_enhanced,
+                #[cfg(feature = "cfg-analysis")]
+                cfg_ctx.as_ref().filter(|_| cli.decision_enhanced),
+            ) {
+                if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
+                    ir::from_decision::decision_to_graph(&dt, parent_id, &mut builder);
+                }
+            }
+        }
+        }
+        #[cfg(feature = "cfg-analysis")]
+        {
+            if let Some(ref ctx) = cfg_ctx {
+                for func in &collected {
+                    if matches!(func.node, FunctionNode::Class(_)) { continue; }
+                    if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
+                        ir::from_cfg::cfg_to_graph(ctx, &func.node, parent_id, &mut builder);
+                    }
+                }
+            }
+        }
+        let graph_ir = builder.build(file_path);
+        let dot = ir::dot::render_graph_dot(&graph_ir, fn_name);
         println!("{dot}");
         return;
     }
@@ -203,22 +254,77 @@ fn main() {
         });
     }
 
-    if cli.json {
-        let result = if include_call_graph {
-            let graph =
-                build_call_graph(&collected, &ret.program, &source, cli.include_builtin_calls);
-            serde_json::json!({
-                "functions": reports,
-                "callGraph": graph,
-            })
+    let include_graph = cli.graph;
+    let output_json = cli.json || include_graph; // --graph implies --json
+
+    if output_json {
+        let mut result = serde_json::Map::new();
+        let need_object_format = include_call_graph || include_graph;
+
+        if need_object_format {
+            result.insert("functions".to_string(), serde_json::json!(reports));
+
+            if include_call_graph {
+                let graph =
+                    build_call_graph(&collected, &ret.program, &source, cli.include_builtin_calls);
+                result.insert("callGraph".to_string(), serde_json::json!(graph));
+            }
+
+            if include_graph {
+                let mut builder = ir::builder::GraphBuilder::new();
+                let symbol_map = ir::from_functions::functions_to_graph(&collected, &mut builder);
+                let cg = build_call_graph(&collected, &ret.program, &source, cli.include_builtin_calls);
+                ir::from_callgraph::callgraph_to_graph(&cg, &symbol_map, &mut builder);
+
+                // Decision tables (gated by --decision / --all)
+                if include_decision {
+                    for func in &collected {
+                        if matches!(func.node, FunctionNode::Class(_)) { continue; }
+                        if let Some(dt) = build_decision_table(
+                            &func.node, &func.symbol_name, &func.symbol_kind.to_string(),
+                            &source, &config.decision_table, cli.decision_enhanced,
+                            #[cfg(feature = "cfg-analysis")]
+                            cfg_ctx.as_ref().filter(|_| cli.decision_enhanced),
+                        ) {
+                            if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
+                                ir::from_decision::decision_to_graph(&dt, parent_id, &mut builder);
+                            }
+                        }
+                    }
+                }
+
+                // CFG blocks (feature-gated)
+                #[cfg(feature = "cfg-analysis")]
+                {
+                    if let Some(ref ctx) = cfg_ctx {
+                        for func in &collected {
+                            if matches!(func.node, FunctionNode::Class(_)) { continue; }
+                            if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
+                                ir::from_cfg::cfg_to_graph(ctx, &func.node, parent_id, &mut builder);
+                            }
+                        }
+                    }
+                }
+
+                let graph_ir = builder.build(file_path.clone());
+                result.insert("graph".to_string(), serde_json::json!(graph_ir));
+            }
+
+            let output = serde_json::Value::Object(result);
+            match serde_json::to_string_pretty(&output) {
+                Ok(json) => println!("{}", json),
+                Err(e) => {
+                    eprintln!("Error serializing JSON: {}", e);
+                    std::process::exit(1);
+                }
+            }
         } else {
-            serde_json::json!(reports)
-        };
-        match serde_json::to_string_pretty(&result) {
-            Ok(json) => println!("{}", json),
-            Err(e) => {
-                eprintln!("Error serializing JSON: {}", e);
-                std::process::exit(1);
+            match serde_json::to_string_pretty(&serde_json::json!(reports)) {
+                Ok(json) => println!("{}", json),
+                Err(e) => {
+                    eprintln!("Error serializing JSON: {}", e);
+                    std::process::exit(1);
+                }
             }
         }
     } else {

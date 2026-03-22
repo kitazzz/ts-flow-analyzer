@@ -217,6 +217,8 @@ fn classify_call(
             target_name: id.name.to_string(),
             receiver: None,
             line,
+            span_start: call_start,
+            span_end: call_end,
         },
         // obj.method() or this.method() or this.repo.method()
         Expression::StaticMemberExpression(member) => {
@@ -230,6 +232,8 @@ fn classify_call(
                     target_name: property,
                     receiver: Some("this".to_string()),
                     line,
+                    span_start: call_start,
+                    span_end: call_end,
                 }
             } else if receiver_text == "super" {
                 CallSite {
@@ -238,6 +242,8 @@ fn classify_call(
                     target_name: property,
                     receiver: Some("super".to_string()),
                     line,
+                    span_start: call_start,
+                    span_end: call_end,
                 }
             } else {
                 CallSite {
@@ -246,6 +252,8 @@ fn classify_call(
                     target_name: property,
                     receiver: Some(receiver_text),
                     line,
+                    span_start: call_start,
+                    span_end: call_end,
                 }
             }
         }
@@ -259,6 +267,8 @@ fn classify_call(
                 target_name: "<dynamic>".to_string(),
                 receiver: Some(receiver_text),
                 line,
+                span_start: call_start,
+                span_end: call_end,
             }
         }
         _ => CallSite {
@@ -267,6 +277,8 @@ fn classify_call(
             target_name: "<dynamic>".to_string(),
             receiver: None,
             line,
+            span_start: call_start,
+            span_end: call_end,
         },
     }
 }

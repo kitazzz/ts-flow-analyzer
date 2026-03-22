@@ -12,7 +12,7 @@ use crate::ast::collect_functions::{CollectedFunction, FunctionNode};
 use classify::classify_call;
 use collect_calls::collect_calls;
 use collect_imports::collect_imports;
-use model::{CallCategory, CallEdge, CallGraphData, CallGraphNode};
+use model::{CallCategory, CallEdge, CallGraphData, CallGraphNode, ResolvedTarget};
 use resolve::resolve_call;
 
 fn get_statements<'a>(node: &'a FunctionNode<'a>) -> Option<&'a [Statement<'a>]> {
@@ -60,8 +60,14 @@ pub fn build_call_graph<'a>(
                 target_name: call.target_name,
                 receiver: call.receiver,
                 line: call.line,
+                span_start: Some(call.span_start),
+                span_end: Some(call.span_end),
                 import_source: resolved.as_ref().and_then(|r| r.as_import_source()),
                 call_category: category,
+                imported_name: resolved.as_ref().and_then(|r| match r {
+                    ResolvedTarget::Import(entry) => Some(entry.imported_name.clone()),
+                    _ => None,
+                }),
             });
         }
     }

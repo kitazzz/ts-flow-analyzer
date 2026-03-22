@@ -60,4 +60,12 @@ pub struct Cli {
     /// Include builtin/collection method calls in call graph (hidden by default)
     #[arg(long)]
     pub include_builtin_calls: bool,
+
+    /// Output unified Graph IR as JSON (implies --json)
+    #[arg(long)]
+    pub graph: bool,
+
+    /// Output unified Graph IR as DOT to stdout and exit
+    #[arg(long, value_name = "FUNCTION")]
+    pub graph_dot: Option<String>,
 }

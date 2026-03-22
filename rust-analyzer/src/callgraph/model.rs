@@ -17,6 +17,8 @@ pub struct CallSite {
     pub target_name: String,
     pub receiver: Option<String>,
     pub line: u32,
+    pub span_start: u32,
+    pub span_end: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -40,8 +42,14 @@ pub struct CallEdge {
     pub receiver: Option<String>,
     pub line: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_start: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub span_end: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub import_source: Option<String>,
     pub call_category: CallCategory,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub imported_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,6 +96,28 @@ impl ResolvedTarget {
         match self {
             ResolvedTarget::Internal(_) => None,
             ResolvedTarget::Import(entry) => Some(entry.source.clone()),
+        }
+    }
+}
+
+impl std::fmt::Display for CallKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CallKind::Direct => write!(f, "direct"),
+            CallKind::ThisMethod => write!(f, "thisMethod"),
+            CallKind::MemberCall => write!(f, "memberCall"),
+            CallKind::Super => write!(f, "super"),
+        }
+    }
+}
+
+impl std::fmt::Display for CallCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CallCategory::Domain => write!(f, "domain"),
+            CallCategory::Infra => write!(f, "infra"),
+            CallCategory::Builtin => write!(f, "builtin"),
+            CallCategory::Unresolved => write!(f, "unresolved"),
         }
     }
 }

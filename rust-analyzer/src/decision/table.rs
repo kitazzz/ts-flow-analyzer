@@ -347,13 +347,16 @@ fn process_if_for_all_paths<'a>(
     } else {
         // Original: register one decision ONCE, then fork each path
         let index = decisions.len();
+        let test_span = if_node.test.span();
         let pred_text =
-            &source[if_node.test.span().start as usize..if_node.test.span().end as usize];
+            &source[test_span.start as usize..test_span.end as usize];
         let line = span_line(source, if_node.span.start);
         decisions.push(DecisionPoint {
             index,
             predicate: compact(pred_text),
             line,
+            span_start: Some(test_span.start),
+            span_end: Some(test_span.end),
         });
 
         for path in paths {
@@ -461,6 +464,8 @@ fn collect_atomics<'a>(expr: &'a Expression<'a>, source: &str, decisions: &mut V
                 index,
                 predicate: compact(pred_text),
                 line,
+                span_start: Some(span.start),
+                span_end: Some(span.end),
             });
         }
     }
