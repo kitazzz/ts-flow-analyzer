@@ -1,1 +1,6 @@
 node_modules/
+rust-analyzer/target/
+rust-analyzer/.install-test/
+.DS_Store
+rust-analyzer/*.dot
+rust-analyzer/*.svg
