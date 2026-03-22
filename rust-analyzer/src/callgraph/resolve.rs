@@ -40,7 +40,16 @@ pub fn resolve_call(
             None
         }
         CallKind::Super => {
-            // Deferred: requires parent class resolution (#2)
+            let class_name = caller_class?;
+            // super starts from the parent class, not the caller's own class
+            let mut current = hierarchy.get(class_name)?.clone();
+            while let Some(cls) = current {
+                let target = format!("{}#{}", cls, call.target_name);
+                if let Some(s) = symbols.iter().find(|s| s.symbol_name == target) {
+                    return Some(ResolvedTarget::Internal(s.symbol_name.clone()));
+                }
+                current = hierarchy.get(&cls).and_then(|p| p.clone());
+            }
             None
         }
         CallKind::MemberCall => {

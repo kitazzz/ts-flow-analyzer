@@ -24,7 +24,10 @@
 解析は独立した段階に分かれています。各段階は前段の出力のみを入力とし、相互に依存しません。
 
 ```
-Source → Parse → Collect Functions → [Metrics | Predicates | Effects | Decision Table | Call Graph]
+Source → Parse → Collect Functions
+       → [Metrics | Predicates | Effects | Decision Table]
+       → Call Graph
+       → Graph IR (functions + call graph + decision points + optional CFG)
 ```
 
 ユーザーは CLI フラグで必要な解析だけを有効化できます。これにより不要な計算を省き、出力ノイズを抑えます。
@@ -80,13 +83,13 @@ CFG（制御フローグラフ）解析は `cfg-analysis` feature gate の背後
 │ Metrics          │ metrics/                 │ Call Graph       │ callgraph/
 │ Predicates       │ predicates/              │ (nodes, edges,   │
 │ Effects          │ effects/                 │  imports)         │
-│ Decision Table   │ decision/                └──────────────────┘
-└──────┬──────────┘
-       │
-       ▼
+│ Decision Table   │ decision/                ├──────────────────┤
+└──────┬──────────┘                          │ Graph IR         │ ir/
+       │                                     │ (nodes, edges)   │
+       ▼                                     └──────────────────┘
 ┌─────────────────┐
 │ JSON / テキスト   │  main.rs (出力部)
-│ 出力             │
+│ / DOT 出力       │
 └─────────────────┘
 ```
 
@@ -130,7 +133,14 @@ src/
 │   ├── classify.rs            # domain / infra / builtin 分類
 │   └── dot.rs                 # Call graph DOT レンダリング
 └── ir/
-    └── function_report.rs     # LLM 向け IR（スタブ）
+    ├── graph.rs               # GraphIR, GraphNode, GraphEdge
+    ├── builder.rs             # GraphBuilder
+    ├── from_functions.rs      # CollectedFunction → Function/Class/Method ノード
+    ├── from_callgraph.rs      # CallGraphData → CallSite / ExternalSymbol / Call edge
+    ├── from_decision.rs       # DecisionTableData → DecisionPoint / DecisionBranch
+    ├── from_cfg.rs            # CFG → CfgBlock / Cfg edge [cfg-analysis feature]
+    ├── dot.rs                 # Graph IR DOT レンダリング
+    └── function_report.rs     # LLM 向け report フォーマッタ（簡易）
 ```
 
 ---
@@ -315,6 +325,7 @@ if (a && b) { ... }
 CallGraphData
 ├── nodes: ファイル内の全関数/メソッド（Class ノード除外）
 ├── edges: 各関数から呼ばれる call site ごとに 1 エッジ
+│   └── line / span_start / span_end を保持
 └── imports: ファイル先頭の import 宣言（type-only 除外）
 ```
 
@@ -354,7 +365,52 @@ entrypoint を指定すると、BFS で到達可能なノードだけを描画�
 - 水色（破線）: import 経由の外部関数
 - 赤色（点線）: 未解決の呼び出し先
 
-### 4.9 メトリクス — 14 指標
+### 4.9 Graph IR — 統一グラフ表現
+
+`--graph` は、既存の解析結果を単一の node/edge モデルに合成した `GraphIR` を返します。
+
+```
+GraphIR
+├── file_path
+├── nodes: Vec<GraphNode>
+└── edges: Vec<GraphEdge>
+```
+
+#### NodeKind
+
+| kind | 意味 |
+|------|------|
+| Function | top-level function / variable function |
+| Class | class declaration |
+| Method | class method |
+| CallSite | 呼び出し位置 |
+| ExternalSymbol | import / unresolved call target |
+| DecisionPoint | decision table の predicate |
+| CfgBlock | CFG の basic block（`cfg-analysis` 時のみ） |
+
+#### EdgeKind
+
+| type | 意味 |
+|------|------|
+| Contains | 構造上の所属関係（Class→Method, Function→CallSite 等） |
+| Call | CallSite→callee |
+| DecisionBranch | DecisionPoint 間の分岐サマリ |
+| Cfg | CFG block 間遷移 |
+
+#### 現在の構築方針
+
+- `Function` / `Method` / `Class` は `CollectedFunction` から生成
+- `CallSite` は call graph から生成し、call expression の `line` / `span` を保持
+- `ExternalSymbol` は import または unresolved target を first-class node として持つ
+- `DecisionPoint` は decision table の predicate から生成し、truth row を使って summary `DecisionBranch` を張る
+- `CfgBlock` は `cfg-analysis` 付きビルド時のみ生成
+
+**制約**:
+
+- `--graph` は常に file-scope です。`--function` は `functions` 配列だけを絞り、`graph` 自体は絞りません
+- decision graph はまだ outcome node まで含む完全 DAG ではありません。terminal outcome を含む拡張は follow-up issue で管理します
+
+### 4.10 メトリクス — 14 指標
 
 | 指標 | 説明 | 算出方法 |
 |-----|------|---------|
@@ -412,9 +468,9 @@ if (a || (b && c))    // → depth 2（|| の中に && がネスト）
 ]
 ```
 
-### 5.2 Call Graph 付きモード
+### 5.2 オブジェクト形式モード
 
-`--call-graph` または `--all` を指定すると、トップレベルがオブジェクトになります。
+`--call-graph`、`--all`、または `--graph` を指定すると、トップレベルがオブジェクトになります。
 
 ```json
 {
@@ -423,15 +479,26 @@ if (a || (b && c))    // → depth 2（|| の中に && がネスト）
     "nodes": [ /* CallGraphNode[] */ ],
     "edges": [ /* CallEdge[] */ ],
     "imports": [ /* ImportEntry[] */ ]
+  },
+  "graph": {
+    "filePath": "path/to/file.ts",
+    "nodes": [ /* GraphNode[] */ ],
+    "edges": [ /* GraphEdge[] */ ]
   }
 }
 ```
 
-**後方互換性**: `--call-graph` / `--all` なしでは従来の配列形式を維持します。
+`callGraph` は `--call-graph` / `--all` のときだけ、`graph` は `--graph` のときだけ含まれます。
+
+**後方互換性**: これらのフラグなしでは従来の配列形式を維持します。
 
 ### 5.3 DOT 出力モード
 
-`--cfg-dot <FUNCTION>` と `--call-graph-dot <FUNCTION>` は JSON ではなく DOT テキストを stdout に出力して終了します。他のフラグは無視されます。
+`--cfg-dot <FUNCTION>`、`--call-graph-dot <FUNCTION>`、`--graph-dot <FUNCTION>` は JSON ではなく DOT テキストを stdout に出力して終了します。
+
+- `--cfg-dot`: 指定 function / method の CFG 部分グラフ
+- `--call-graph-dot`: 指定 entrypoint から到達可能な call graph
+- `--graph-dot`: 指定 function / method を root にした Graph IR 部分グラフ
 
 ---
 
@@ -492,6 +559,7 @@ cfg-analysis = ["dep:oxc_semantic", "oxc_semantic/cfg", "dep:oxc_cfg"]
 
 - `--cfg-dot <FUNCTION>`: 関数の CFG を DOT で可視化
 - `--decision-enhanced` の `terminalReachable` フィールド: 各 truth row の到達可能性
+- `--graph` / `--graph-dot` に `CfgBlock` ノードと `Cfg` edge を含める
 - 内部的に `CfgContext` が構築され、reachability 判定に使用される
 
 ### 7.3 無効時の振る舞い
@@ -500,6 +568,7 @@ cfg-analysis = ["dep:oxc_semantic", "oxc_semantic/cfg", "dep:oxc_cfg"]
 
 - `--cfg-dot` はエラーメッセージを出して終了
 - `--decision-enhanced` は `&&` / `||` 展開のみ動作し、`terminalReachable` は省略
+- `--graph` / `--graph-dot` は動作するが、`CfgBlock` / `Cfg` edge は含まれない
 
 ---
 
@@ -538,7 +607,8 @@ Oxc 0.121 は AST 型として以下を使用:
 | O6 | CFG 統合、短絡展開、到達可能性 | 完了 |
 | O7 | Intra-file call graph | 完了 |
 | O7+ | Predicate 正規化改善、条件分解強化、call graph 分類 | 完了 |
-| O8 | LLM 向け IR 生成 | 未着手 |
+| O8 | Graph IR foundation (`--graph`, `--graph-dot`) | 完了 |
+| O9 | LLM 向け IR / decision DAG 拡張 | 未着手 |
 
 ### 今後の拡張候補
 
@@ -547,6 +617,7 @@ Oxc 0.121 は AST 型として以下を使用:
 - コンストラクタインジェクション追跡（`this.field` の型解決）
 - `oxc_semantic` ベースのバインディング解決
 - コールバック / 高階関数の追跡
+- Graph IR 上での complete decision DAG（outcome node / terminal edge）
 - Outcome label の安定化（エラーメッセージからの自動命名）
 - Effects と guard path の紐付け（path-aware effects）
 - CFG ベースの strict MC/DC
@@ -593,9 +664,16 @@ samples/usecase/approveOrder.ts
 │  callgraph/ (ファイル全体)                          │      │
 │  ├─ collect_imports  → ImportEntry[]                │      │
 │  ├─ collect_calls    → CallSite[] (per function)    │      │
-│  ├─ resolve          → ResolvedTarget              │      │
-│  ├─ classify         → CallCategory                │      │
-│  └─ → CallGraphData                               │      │
+│  ├─ resolve          → ResolvedTarget               │      │
+│  ├─ classify         → CallCategory                 │      │
+│  └─ → CallGraphData                                 │      │
+│                                                    │      │
+│  ir/ (ファイル全体)                                 │      │
+│  ├─ from_functions  → Function/Class/Method nodes   │      │
+│  ├─ from_callgraph  → CallSite/ExternalSymbol nodes │      │
+│  ├─ from_decision   → DecisionPoint/Branch edges    │      │
+│  ├─ from_cfg        → CfgBlock/Cfg edges            │      │
+│  └─ → GraphIR                                        │      │
 │                                                    │      │
 │  5. JSON / テキスト出力 ◀─────────────────────────┘      │
 └──────────────────────────────────────────────────────────┘

@@ -7,6 +7,7 @@
 - effect 抽出
 - decision table / MC/DC-like ケース出力
 - intra-file call graph（ファイル内呼び出しグラフ）
+- unified Graph IR (`--graph`) と DOT 可視化 (`--graph-dot`)
 
 バイナリ名は `rf-analyze` です。
 
@@ -127,6 +128,8 @@ rf-analyze [OPTIONS] <FILE>
 - `--call-graph`: call graph を JSON 出力に含める
 - `--call-graph-dot <FUNCTION>`: 指定した function からの到達可能な呼び出しグラフを DOT で stdout に出す
 - `--include-builtin-calls`: builtin/collection メソッド（`reduce`, `some`, `toLocaleString` 等）を call graph に含める（デフォルトでは非表示）
+- `--graph`: unified Graph IR を JSON 出力に含める（`--json` を暗黙に有効化）
+- `--graph-dot <FUNCTION>`: 指定した function / method を起点に Graph IR を DOT で stdout に出す
 - `--cfg-dot <FUNCTION>`: 指定した function / method の CFG を DOT で stdout に出す
 
 補足:
@@ -135,6 +138,8 @@ rf-analyze [OPTIONS] <FILE>
 - `--function` は `symbolName` を指定します
 - class method の `symbolName` は `ClassName#methodName` 形式です
 - `--decision-enhanced` と `--cfg-dot` で CFG 機能を使うには `cfg-analysis` feature 付きビルドが必要です
+- `--graph` / `--graph-dot` は feature なしでも使えますが、`cfg-analysis` 付きビルドのときだけ `cfgBlock` / `cfg` edge が含まれます
+- `--graph` は常にファイル全体を graph 化します。`--function` は `functions` 配列のみに適用され、`graph` キーは絞り込みません
 
 ## 実行例
 
@@ -180,6 +185,18 @@ call graph を JSON で見る:
 rf-analyze ../samples/usecase/approveOrder.ts --call-graph --json
 ```
 
+Graph IR を JSON で見る:
+
+```sh
+rf-analyze ../samples/usecase/approveOrder.ts --graph
+```
+
+Graph IR と decision point をまとめて JSON で見る:
+
+```sh
+rf-analyze ../samples/usecase/approveOrder.ts --graph --decision
+```
+
 call graph を DOT で出す（execute からの到達可能グラフ）:
 
 ```sh
@@ -196,6 +213,12 @@ DOT をファイルに保存する:
 
 ```sh
 rf-analyze ../samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute' > execute.dot
+```
+
+Graph IR を DOT で出す:
+
+```sh
+rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
 ```
 
 別サンプルを解析する:
@@ -229,20 +252,22 @@ JSON では各シンボルごとに `FunctionReport` 相当のオブジェクト
 - `predicates`: 条件式の抽出結果
 - `effects`: `return` / `throw` / call / assignment などの抽出結果
 - `decisionTable`: decision table / MC/DC-like ケース
-- `callGraph`: ファイル内呼び出しグラフ（`--call-graph` または `--all` 時のみ、トップレベル構造が変わる）
+- `callGraph`: ファイル内呼び出しグラフ（`--call-graph` または `--all` 時）
+- `graph`: unified Graph IR（`--graph` 時）
 
 ### JSON 出力形式の注意
 
-`--call-graph` または `--all` を指定すると、JSON のトップレベルが配列からオブジェクトに変わります。
+`--call-graph`、`--all`、または `--graph` を指定すると、JSON のトップレベルが配列からオブジェクトに変わります。
 
 ```json
 {
   "functions": [ /* FunctionReport の配列 */ ],
-  "callGraph": { "nodes": [...], "edges": [...], "imports": [...] }
+  "callGraph": { "nodes": [...], "edges": [...], "imports": [...] },
+  "graph": { "filePath": "...", "nodes": [...], "edges": [...] }
 }
 ```
 
-これらのフラグなしでは従来通り `[FunctionReport]` の配列を返します。
+`callGraph` は `--call-graph` / `--all` のときだけ、`graph` は `--graph` のときだけ含まれます。これらのフラグなしでは従来通り `[FunctionReport]` の配列を返します。
 
 ### metrics
 
@@ -370,6 +395,37 @@ decision_table:
 
 デフォルトでは `builtin` は非表示です。`--include-builtin-calls` で表示できます。
 
+### graph
+
+`--graph` は file-scope の unified Graph IR を返します。ノードとエッジの基本形は次です。
+
+- `nodes[].kind`: `function` / `class` / `method` / `callSite` / `externalSymbol` / `decisionPoint` / `cfgBlock`
+- `nodes[].loc`: `line`, `spanStart`, `spanEnd`
+- `edges[].kind.type`: `contains` / `call` / `decisionBranch` / `cfg`
+
+現在の構成は次のとおりです。
+
+- function / class / method ノード
+- caller `-[contains]->` callsite
+- callsite `-[call]->` internal callee または external symbol
+- function `-[contains]->` decision point
+- decision point `-[decisionBranch]->` 次の decision point（truth row 由来の要約 edge）
+- function `-[contains]->` cfgBlock（`cfg-analysis` 付きビルド時）
+- cfgBlock `-[cfg]->` cfgBlock
+
+補足:
+
+- `CallSite` は call expression の span を持ちます
+- `ExternalSymbol` はローカルソース上の span を持ちません
+- decision graph はまだ outcome node まで含む完全 DAG ではありません。現状の `decisionBranch` は truth row から導いた summary edge です
+- `--graph` 単体では decision point は出ません。`--decision` または `--all` を併用したときだけ含まれます
+
+例:
+
+```sh
+rf-analyze ../samples/usecase/approveOrder.ts --graph --decision
+```
+
 ### call graph DOT
 
 `--call-graph-dot <FUNCTION>` は、指定エントリポイントから到達可能な呼び出しグラフを DOT で出力して終了します。
@@ -391,6 +447,21 @@ rf-analyze ../samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseC
 dot -Tsvg callgraph.dot -o callgraph.svg
 ```
 
+### graph DOT
+
+`--graph-dot <FUNCTION>` は、指定した function / method を root にして Graph IR の部分グラフを DOT で出力します。
+
+- root function / method
+- その `contains` 子孫
+- そこから出る `call` / `cfg` / `decisionBranch` の 1-hop target
+
+`--decision` を付けると decision point と `decisionBranch` も含まれます。`cfg-analysis` 付きビルドなら `cfgBlock` も含まれます。
+
+```sh
+rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
+rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --decision
+```
+
 ### CFG / DOT
 
 `--cfg-dot <FUNCTION>` は、指定した function / method の CFG 部分グラフを DOT 形式で stdout に出して終了します。
@@ -408,7 +479,7 @@ dot -Tsvg execute.dot -o execute.svg
 
 ## 出力イメージ
 
-`rf-analyze ../samples/usecase/approveOrder.ts --function 'ApproveOrderUseCase#execute' --all --json`
+`rf-analyze ../samples/usecase/approveOrder.ts --function 'ApproveOrderUseCase#execute' --graph --decision --json`
 
 ```json
 {
@@ -420,54 +491,42 @@ dot -Tsvg execute.dot -o execute.svg
       "memberName": "execute",
       "functionName": "execute",
       "filePath": "../samples/usecase/approveOrder.ts",
-      "startLine": 26,
-      "metrics": {
-        "ifCount": 6,
-        "cyclomaticComplexity": 7,
-        "maxNestingDepth": 2
-      },
-      "predicates": [
-        {
-          "text": "order",
-          "negated": true,
-          "kind": "truthiness",
-          "context": "if",
-          "line": 28,
-          "normalizedName": "orderMissing"
-        }
-      ],
-      "effects": [
-        {
-          "kind": "call",
-          "sideEffect": "dbRead",
-          "line": 27,
-          "text": "const order = await this.orderRepo.findById(input.orderId)"
-        }
-      ],
-      "decisionTable": {
-        "symbolName": "ApproveOrderUseCase#execute"
-      }
+      "startLine": 26
     }
   ],
-  "callGraph": {
+  "graph": {
+    "filePath": "../samples/usecase/approveOrder.ts",
     "nodes": [
-      { "symbolName": "ApproveOrderUseCase#execute", "kind": "method", "className": "ApproveOrderUseCase", "startLine": 26 },
-      { "symbolName": "ApproveOrderUseCase#checkRisk", "kind": "method", "className": "ApproveOrderUseCase", "startLine": 56 }
+      {
+        "id": 2,
+        "kind": "method",
+        "label": "ApproveOrderUseCase#execute",
+        "symbolName": "ApproveOrderUseCase#execute",
+        "loc": { "line": 26, "spanStart": 728, "spanEnd": 1726 }
+      },
+      {
+        "id": 4,
+        "kind": "callSite",
+        "label": "findById",
+        "loc": { "line": 27, "spanStart": 810, "spanEnd": 848 }
+      },
+      {
+        "id": 15,
+        "kind": "decisionPoint",
+        "label": "!order",
+        "loc": { "line": 28, "spanStart": 857, "spanEnd": 863 }
+      }
     ],
     "edges": [
-      { "caller": "ApproveOrderUseCase#execute", "callee": "ApproveOrderUseCase#checkRisk", "kind": "thisMethod", "targetName": "checkRisk", "receiver": "this", "line": 45 },
-      { "caller": "ApproveOrderUseCase#execute", "kind": "memberCall", "targetName": "findById", "receiver": "this.orderRepo", "line": 27 },
-      { "caller": "ApproveOrderUseCase#execute", "kind": "direct", "targetName": "canTransition", "line": 40, "importSource": "../domain/order.ts" }
-    ],
-    "imports": [
-      { "localName": "canTransition", "importedName": "canTransition", "source": "../domain/order.ts" },
-      { "localName": "transitionOrder", "importedName": "transitionOrder", "source": "../domain/order.ts" }
+      { "source": 2, "target": 4, "kind": { "type": "contains" } },
+      { "source": 4, "target": 5, "kind": { "type": "call", "callKind": "memberCall", "category": "infra" } },
+      { "source": 15, "target": 16, "kind": { "type": "decisionBranch", "branch": false } }
     ]
   }
 }
 ```
 
-**注意**: `--all` や `--call-graph` を付けない場合は、従来通り `[FunctionReport]` の配列が返ります。
+**注意**: `--all` や `--call-graph` や `--graph` を付けない場合は、従来通り `[FunctionReport]` の配列が返ります。
 
 ## 開発メモ
 
@@ -506,8 +565,17 @@ rf-analyze ../samples/usecase/approveOrder.ts --decision --decision-enhanced --j
 # call graph 付き JSON
 rf-analyze ../samples/usecase/approveOrder.ts --call-graph --json
 
+# Graph IR
+rf-analyze ../samples/usecase/approveOrder.ts --graph
+
+# Graph IR + decision points
+rf-analyze ../samples/usecase/approveOrder.ts --graph --decision
+
 # call graph DOT（エントリポイント指定）
 rf-analyze ../samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute'
+
+# Graph IR DOT
+rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
 
 # 関数 CFG を DOT 出力
 rf-analyze ../samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute'
