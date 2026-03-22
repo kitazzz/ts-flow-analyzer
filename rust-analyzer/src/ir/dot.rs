@@ -92,12 +92,15 @@ fn render_node(node: &GraphNode) -> String {
         NodeKind::CallSite => ("ellipse", "\"\""),
         NodeKind::DecisionPoint => ("diamond", "\"\""),
         NodeKind::ExternalSymbol => ("box", "dashed"),
+        NodeKind::DataFlowDef => ("note", "filled"),
+        NodeKind::DataFlowUse => ("ellipse", "\"\""),
     };
 
     let fill = match node.kind {
         NodeKind::Function | NodeKind::Method => ", fillcolor=\"lightyellow\"",
         NodeKind::Class => ", fillcolor=\"lightgrey\"",
         NodeKind::ExternalSymbol => ", fillcolor=\"lightblue\"",
+        NodeKind::DataFlowDef => ", fillcolor=\"lightyellow\"",
         _ => "",
     };
 
@@ -134,6 +137,10 @@ fn render_edge(edge: &GraphEdge) -> String {
         EdgeKind::DecisionBranch { branch } => {
             let label = if *branch { "T" } else { "F" };
             ("green", "solid", label.to_string())
+        }
+        EdgeKind::DataDep { .. } => {
+            let label = edge.label.as_deref().unwrap_or("def→use");
+            ("orange", "solid", label.to_string())
         }
     };
 

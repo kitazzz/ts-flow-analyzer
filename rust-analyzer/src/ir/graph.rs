@@ -35,6 +35,8 @@ pub enum NodeKind {
     CallSite,
     DecisionPoint,
     ExternalSymbol,
+    DataFlowDef,
+    DataFlowUse,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -58,6 +60,14 @@ pub enum EdgeKind {
     Contains,
     #[serde(rename_all = "camelCase")]
     DecisionBranch { branch: bool },
+    #[serde(rename_all = "camelCase")]
+    DataDep { dep_kind: DataDepKind },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DataDepKind {
+    DefUse,
 }
 
 #[derive(Debug, Clone, Serialize)]

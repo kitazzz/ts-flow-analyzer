@@ -1,3 +1,4 @@
+use crate::dataflow::model::DataFlowReport;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -19,6 +20,8 @@ pub struct FunctionReport {
     pub effects: Option<Vec<Effect>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decision_table: Option<DecisionTableData>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_flow: Option<DataFlowReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

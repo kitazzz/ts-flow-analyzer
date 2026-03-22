@@ -4,6 +4,7 @@ pub mod function_report;
 pub mod from_callgraph;
 #[cfg(feature = "cfg-analysis")]
 pub mod from_cfg;
+pub mod from_data_flow;
 pub mod from_decision;
 pub mod from_functions;
 pub mod graph;

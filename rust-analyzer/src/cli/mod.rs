@@ -68,4 +68,8 @@ pub struct Cli {
     /// Output unified Graph IR as DOT to stdout and exit
     #[arg(long, value_name = "FUNCTION")]
     pub graph_dot: Option<String>,
+
+    /// Include def-use data flow analysis
+    #[arg(long)]
+    pub data_flow: bool,
 }

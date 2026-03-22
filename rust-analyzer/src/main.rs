@@ -3,6 +3,7 @@ mod callgraph;
 mod cli;
 mod config;
 mod control_flow;
+mod dataflow;
 mod decision;
 mod effects;
 mod ir;
@@ -28,6 +29,7 @@ use metrics::cyclomatic::analyze_cyclomatic_complexity;
 use metrics::function_nesting::analyze_function_nesting;
 use metrics::nesting::analyze_max_nesting_depth;
 use model::{Effect, EffectKind, FunctionMetrics, FunctionReport, SideEffectClass, SymbolKind};
+use dataflow::analyze::analyze_data_flow;
 use predicates::extract::extract_predicates;
 use predicates::normalize::normalize_predicates;
 
@@ -53,6 +55,7 @@ fn main() {
     let include_predicates = cli.all || cli.predicates;
     let include_effects = cli.all || cli.effects;
     let include_decision = cli.all || cli.decision;
+    let include_data_flow = cli.all || cli.data_flow;
 
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(path).unwrap_or_default();
@@ -178,6 +181,26 @@ fn main() {
                 }
             }
         }
+        // Data-flow → Graph IR
+        if include_data_flow {
+            for func in &collected {
+                if matches!(func.node, FunctionNode::Class(_)) { continue; }
+                if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
+                    let df_report = match &func.node {
+                        FunctionNode::Function(f) => {
+                            f.body.as_ref().map(|b| analyze_data_flow(&b.statements, &f.params, &source))
+                        }
+                        FunctionNode::Arrow(a) => {
+                            Some(analyze_data_flow(&a.body.statements, &a.params, &source))
+                        }
+                        _ => None,
+                    };
+                    if let Some(report) = df_report {
+                        ir::from_data_flow::data_flow_to_graph(&report, parent_id, &mut builder);
+                    }
+                }
+            }
+        }
         let graph_ir = builder.build(file_path);
         let dot = ir::dot::render_graph_dot(&graph_ir, fn_name);
         println!("{dot}");
@@ -287,6 +310,22 @@ fn main() {
             None
         };
 
+        let data_flow = if include_data_flow {
+            match &func.node {
+                FunctionNode::Function(f) => {
+                    f.body.as_ref().map(|b| {
+                        analyze_data_flow(&b.statements, &f.params, &source)
+                    })
+                }
+                FunctionNode::Arrow(a) => {
+                    Some(analyze_data_flow(&a.body.statements, &a.params, &source))
+                }
+                FunctionNode::Class(_) => None,
+            }
+        } else {
+            None
+        };
+
         let function_name = func
             .member_name
             .clone()
@@ -304,6 +343,7 @@ fn main() {
             predicates,
             effects,
             decision_table,
+            data_flow,
         });
     }
 
@@ -354,6 +394,27 @@ fn main() {
                             if matches!(func.node, FunctionNode::Class(_)) { continue; }
                             if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
                                 ir::from_cfg::cfg_to_graph(ctx, &func.node, parent_id, &mut builder);
+                            }
+                        }
+                    }
+                }
+
+                // Data-flow → Graph IR
+                if include_data_flow {
+                    for func in &collected {
+                        if matches!(func.node, FunctionNode::Class(_)) { continue; }
+                        if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
+                            let df_report = match &func.node {
+                                FunctionNode::Function(f) => {
+                                    f.body.as_ref().map(|b| analyze_data_flow(&b.statements, &f.params, &source))
+                                }
+                                FunctionNode::Arrow(a) => {
+                                    Some(analyze_data_flow(&a.body.statements, &a.params, &source))
+                                }
+                                _ => None,
+                            };
+                            if let Some(report) = df_report {
+                                ir::from_data_flow::data_flow_to_graph(&report, parent_id, &mut builder);
                             }
                         }
                     }
@@ -424,6 +485,22 @@ fn main() {
                         e.side_effect,
                         e.line,
                         &e.text[..e.text.len().min(60)]
+                    );
+                }
+            }
+
+            if let Some(df) = &report.data_flow {
+                println!(
+                    "  Data Flow: {} defs, {} uses, {} edges",
+                    df.defs.len(),
+                    df.uses.len(),
+                    df.def_use_edges.len()
+                );
+                for edge in &df.def_use_edges {
+                    let may = if edge.may_reach { " (may)" } else { "" };
+                    println!(
+                        "    {} @ line {} → {:?} @ line {}{}",
+                        edge.def_name, edge.def_line, edge.use_kind, edge.use_line, may
                     );
                 }
             }
