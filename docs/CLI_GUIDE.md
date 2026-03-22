@@ -1,11 +1,13 @@
 # CLI Guide
 
-このドキュメントは `src/cli` 配下の CLI を実際に使ったときの目的、使い方、出力の意味をまとめたものです。
+このドキュメントは `src/cli` 配下の TypeScript 製 CLI を実際に使ったときの目的、使い方、出力の意味をまとめたものです。
 README の概要説明とは分けて、CLI 利用時の実務向けガイドとして書いています。
+
+現在の主実装は Rust / Oxc ベースの [`rust-analyzer/README.md`](../rust-analyzer/README.md) です。このガイドは legacy / prototype 扱いの Node CLI 向けです。
 
 ## CLI 一覧
 
-このリポジトリにある CLI は次の 2 つです。
+`src/cli` 配下にある CLI は次の 2 つです。
 
 - `src/cli/analyze.ts`
   構文ベースの静的解析 CLI。複雑度、predicate、effects、decision table、test template を出します。

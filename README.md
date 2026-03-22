@@ -1,9 +1,49 @@
-# recast-forge POC: TypeScript Function/Class Complexity Analyzer
+# recast-forge
 
-TypeScript ファイルの関数 / メソッドごとに複雑性メトリクスを計測する CLI ツール。
+TypeScript コードベースに対する静的解析の実験リポジトリです。
 
-現状は `function` / `variableFunction` / `method` / `class` をレポート対象とし、
-出力では `symbolKind` で種別を区別できる。
+現在の主実装は Rust / Oxc ベースの CLI `rust-analyzer/` にあります。`src/` 配下の TypeScript CLI は初期 PoC / 探索用の実装として残しています。
+
+## Current Entry Points
+
+- 現行 CLI と機能一覧: [`rust-analyzer/README.md`](rust-analyzer/README.md)
+- 実装構成とデータモデル: [`rust-analyzer/docs/ARCHITECTURE.md`](rust-analyzer/docs/ARCHITECTURE.md)
+- フェーズ別の実装解説: [`rust-analyzer/docs/IMPLEMENTATION_PHASES.md`](rust-analyzer/docs/IMPLEMENTATION_PHASES.md)
+- マイルストーンと方針: [`plan/milestone.md`](plan/milestone.md)
+- legacy Node CLI ガイド: [`docs/CLI_GUIDE.md`](docs/CLI_GUIDE.md)
+
+## Quick Start
+
+```sh
+# 基本ビルド
+cargo build --manifest-path rust-analyzer/Cargo.toml
+
+# JSON で主要解析をまとめて出す
+cargo run --manifest-path rust-analyzer/Cargo.toml -- \
+  samples/usecase/approveOrder.ts --all --json
+
+# local def-use / data-flow を出す
+cargo run --manifest-path rust-analyzer/Cargo.toml -- \
+  samples/usecase/approveOrder.ts --data-flow --json
+
+# Graph IR に data-flow も含めて出す
+cargo run --manifest-path rust-analyzer/Cargo.toml -- \
+  samples/usecase/approveOrder.ts --graph --data-flow
+```
+
+現行 CLI で扱える主な出力:
+
+- metrics
+- predicates
+- effects
+- local def-use / data-flow
+- decision table / MC/DC-like cases
+- intra-file call graph
+- unified Graph IR / DOT
+
+## Legacy Prototype
+
+以下は `src/cli/analyze.ts` を中心とした TypeScript PoC の説明です。現行の主系 CLI ではないため、新しい機能や最新仕様は `rust-analyzer/README.md` を優先してください。
 
 ## Usage
 

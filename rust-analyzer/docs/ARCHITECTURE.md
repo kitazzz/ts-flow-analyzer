@@ -4,6 +4,8 @@
 
 `recast-forge-analyzer`（バイナリ名: `rf-analyze`）は、TypeScript / JavaScript ソースコードを対象にした Rust 製の静的解析 CLI です。
 
+実装を読む順番とフェーズ別のコード導線は [`IMPLEMENTATION_PHASES.md`](IMPLEMENTATION_PHASES.md) を参照してください。
+
 **目的**: 関数・メソッド単位で「何を判断し、何をするか」を構造的に抽出する。
 テストケース設計、コードレビュー、LLM 連携のための中間表現（IR）生成を視野に入れた解析基盤です。
 
@@ -25,9 +27,9 @@
 
 ```
 Source → Parse → Collect Functions
-       → [Metrics | Predicates | Effects | Decision Table]
+       → [Metrics | Predicates | Effects | Data Flow | Decision Table]
        → Call Graph
-       → Graph IR (functions + call graph + decision points + optional CFG)
+       → Graph IR (functions + call graph + decision points + data flow + optional CFG)
 ```
 
 ユーザーは CLI フラグで必要な解析だけを有効化できます。これにより不要な計算を省き、出力ノイズを抑えます。
@@ -83,6 +85,7 @@ CFG（制御フローグラフ）解析は `cfg-analysis` feature gate の背後
 │ Metrics          │ metrics/                 │ Call Graph       │ callgraph/
 │ Predicates       │ predicates/              │ (nodes, edges,   │
 │ Effects          │ effects/                 │  imports)         │
+│ Data Flow        │ dataflow/                │                  │
 │ Decision Table   │ decision/                ├──────────────────┤
 └──────┬──────────┘                          │ Graph IR         │ ir/
        │                                     │ (nodes, edges)   │
@@ -116,6 +119,9 @@ src/
 │   └── normalize.rs           # 意味命名 / 正規化
 ├── effects/
 │   └── extract.rs             # 副作用抽出 + 分類
+├── dataflow/
+│   ├── model.rs               # Def / Use / DefUseEdge / DataFlowReport
+│   └── analyze.rs             # intraprocedural def-use / reaching-def walker
 ├── decision/
 │   ├── model.rs               # パス状態の型定義
 │   ├── table.rs               # Decision table 構築
@@ -137,6 +143,7 @@ src/
     ├── builder.rs             # GraphBuilder
     ├── from_functions.rs      # CollectedFunction → Function/Class/Method ノード
     ├── from_callgraph.rs      # CallGraphData → CallSite / ExternalSymbol / Call edge
+    ├── from_data_flow.rs      # DataFlowReport → DataFlowDef / DataFlowUse / DataDep
     ├── from_decision.rs       # DecisionTableData → DecisionPoint / DecisionBranch
     ├── from_cfg.rs            # CFG → CfgBlock / Cfg edge [cfg-analysis feature]
     ├── dot.rs                 # Graph IR DOT レンダリング
@@ -176,6 +183,7 @@ FunctionReport
 ├── metrics: FunctionMetrics { ... }
 ├── predicates: Option<Vec<AtomicPredicate>>    ← --predicates / --all
 ├── effects: Option<Vec<Effect>>                ← --effects / --all
+├── data_flow: Option<DataFlowReport>           ← --data-flow / --all
 └── decision_table: Option<DecisionTableData>   ← --decision / --all
 ```
 
@@ -317,7 +325,47 @@ if (a && b) { ... }
 3. CFG で到達不能とマークされた行は除外する
 4. happy path を含むペアにはボーナススコアを付与する
 
-### 4.8 Call Graph — 呼び出しグラフ
+### 4.8 Data Flow — local def-use / reaching-def
+
+`--data-flow` は、単一関数・単一ファイル・intraprocedural な def-use 解析を返します。
+
+```
+DataFlowReport
+├── defs: Vec<Def>
+├── uses: Vec<Use>
+└── def_use_edges: Vec<DefUseEdge>
+```
+
+#### DefKind
+
+| kind | 例 |
+|------|---|
+| `Declaration` | `const x = ...` |
+| `Parameter` | `function f(x)` |
+| `Assignment` | `x = y`, `x += y`, `i++` |
+| `ForBinding` | `for (let x of xs)` / `for (x in obj)` |
+| `CatchBinding` | `catch (e)` |
+| `Destructuring` | `const { a } = obj`, `({ a } = obj)` |
+
+#### UseKind
+
+| kind | 例 |
+|------|---|
+| `Read` | `return x` |
+| `MemberRead` | `return this.value` |
+
+#### セマンティクス
+
+- lexical scope と function scope を `BindingId` で分離して tracking
+- `var` は prepass で hoist
+- body-level `function declaration` は hoist
+- `this.field` は field ごとに別 binding として tracking
+- loop は dry-run + real-walk の 2 段階で reaching set を安定化
+- `mayReach = true` は「その def が一部分岐にしか存在しない」ことを表す
+
+初期化なし宣言は `defs` には入りますが、reaching def には入りません。
+
+### 4.9 Call Graph — 呼び出しグラフ
 
 ファイル内の関数間呼び出し関係を表現します。
 
@@ -334,9 +382,11 @@ CallGraphData
 | kind | 例 | callee 解決 |
 |------|---|-----------|
 | Direct | `canTransition()` | 同一ファイル関数 or import |
-| ThisMethod | `this.checkRisk()` | 同一クラスメソッド |
+| ThisMethod | `this.checkRisk()` | 同一クラスまたは親クラスのメソッド |
 | MemberCall | `this.orderRepo.findById()` | 未解決 |
-| Super | `super.method()` | 未解決（将来対応）|
+| Super | `super.method()` | 親クラスチェーン上のメソッド |
+| SuperConstructor | `super()` | 親クラス constructor |
+| New | `new Foo()` | 同一ファイル class / function または import |
 
 #### CallCategory — 呼び出しの分類
 
@@ -351,10 +401,13 @@ Builtin は `--include-builtin-calls` で表示できます。
 
 #### 解決ルール（優先順）
 
-1. **ThisMethod**: `this.method()` → `ClassName#method` を symbols から検索
+1. **ThisMethod**: `this.method()` → 現在クラスから親クラスへ向かって `ClassName#method` を検索
 2. **Direct（ファイル内）**: `foo()` → class_name が None の CollectedFunction から検索
 3. **Direct（import）**: `foo()` → import map から検索
-4. **MemberCall / Super**: 未解決（receiver chain を記録）
+4. **Super**: 親クラスから上方向に `Parent#method` を検索
+5. **SuperConstructor**: 親クラスの `#constructor` を検索
+6. **New**: class / function / import を検索
+7. **MemberCall**: 未解決（receiver chain を記録）
 
 #### DOT レンダリング
 
@@ -365,7 +418,7 @@ entrypoint を指定すると、BFS で到達可能なノードだけを描画�
 - 水色（破線）: import 経由の外部関数
 - 赤色（点線）: 未解決の呼び出し先
 
-### 4.9 Graph IR — 統一グラフ表現
+### 4.10 Graph IR — 統一グラフ表現
 
 `--graph` は、既存の解析結果を単一の node/edge モデルに合成した `GraphIR` を返します。
 
@@ -386,6 +439,8 @@ GraphIR
 | CallSite | 呼び出し位置 |
 | ExternalSymbol | import / unresolved call target |
 | DecisionPoint | decision table の predicate |
+| DataFlowDef | def site |
+| DataFlowUse | use site |
 | CfgBlock | CFG の basic block（`cfg-analysis` 時のみ） |
 
 #### EdgeKind
@@ -395,6 +450,7 @@ GraphIR
 | Contains | 構造上の所属関係（Class→Method, Function→CallSite 等） |
 | Call | CallSite→callee |
 | DecisionBranch | DecisionPoint 間の分岐サマリ |
+| DataDep | DataFlowDef→DataFlowUse |
 | Cfg | CFG block 間遷移 |
 
 #### 現在の構築方針
@@ -403,6 +459,7 @@ GraphIR
 - `CallSite` は call graph から生成し、call expression の `line` / `span` を保持
 - `ExternalSymbol` は import または unresolved target を first-class node として持つ
 - `DecisionPoint` は decision table の predicate から生成し、truth row を使って summary `DecisionBranch` を張る
+- `DataFlowDef` / `DataFlowUse` は `DataFlowReport` から生成し、`DataDep` edge を張る
 - `CfgBlock` は `cfg-analysis` 付きビルド時のみ生成
 
 **制約**:
@@ -410,7 +467,7 @@ GraphIR
 - `--graph` は常に file-scope です。`--function` は `functions` 配列だけを絞り、`graph` 自体は絞りません
 - decision graph はまだ outcome node まで含む完全 DAG ではありません。terminal outcome を含む拡張は follow-up issue で管理します
 
-### 4.10 メトリクス — 14 指標
+### 4.11 メトリクス — 14 指標
 
 | 指標 | 説明 | 算出方法 |
 |-----|------|---------|
@@ -489,6 +546,7 @@ if (a || (b && c))    // → depth 2（|| の中に && がネスト）
 ```
 
 `callGraph` は `--call-graph` / `--all` のときだけ、`graph` は `--graph` のときだけ含まれます。
+`functions[].dataFlow` は `--data-flow` / `--all` のときだけ含まれます。
 
 **後方互換性**: これらのフラグなしでは従来の配列形式を維持します。
 
@@ -559,7 +617,9 @@ cfg-analysis = ["dep:oxc_semantic", "oxc_semantic/cfg", "dep:oxc_cfg"]
 
 - `--cfg-dot <FUNCTION>`: 関数の CFG を DOT で可視化
 - `--decision-enhanced` の `terminalReachable` フィールド: 各 truth row の到達可能性
+- `--data-flow`: 関数ごとの local def-use / reaching-def レポート
 - `--graph` / `--graph-dot` に `CfgBlock` ノードと `Cfg` edge を含める
+- `--graph` / `--graph-dot` に `DataFlowDef` / `DataFlowUse` / `DataDep` を含める（`--data-flow` / `--all` 時）
 - 内部的に `CfgContext` が構築され、reachability 判定に使用される
 
 ### 7.3 無効時の振る舞い
@@ -608,16 +668,17 @@ Oxc 0.121 は AST 型として以下を使用:
 | O7 | Intra-file call graph | 完了 |
 | O7+ | Predicate 正規化改善、条件分解強化、call graph 分類 | 完了 |
 | O8 | Graph IR foundation (`--graph`, `--graph-dot`) | 完了 |
+| O8.5 | Local def-use / data-flow foundation | 完了 |
 | O9 | LLM 向け IR / decision DAG 拡張 | 未着手 |
 
 ### 今後の拡張候補
 
 - マルチファイルモジュール解決（import 先の解析）
-- `super.method()` の親クラス解決
 - コンストラクタインジェクション追跡（`this.field` の型解決）
 - `oxc_semantic` ベースのバインディング解決
 - コールバック / 高階関数の追跡
 - Graph IR 上での complete decision DAG（outcome node / terminal edge）
+- Graph IR 上での interprocedural data-dep / SDG・CPG 拡張
 - Outcome label の安定化（エラーメッセージからの自動命名）
 - Effects と guard path の紐付け（path-aware effects）
 - CFG ベースの strict MC/DC

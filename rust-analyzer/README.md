@@ -5,9 +5,15 @@
 - 基本メトリクスの集計
 - predicate 抽出
 - effect 抽出
+- local def-use / data-flow 解析
 - decision table / MC/DC-like ケース出力
 - intra-file call graph（ファイル内呼び出しグラフ）
 - unified Graph IR (`--graph`) と DOT 可視化 (`--graph-dot`)
+
+関連ドキュメント:
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/IMPLEMENTATION_PHASES.md`](docs/IMPLEMENTATION_PHASES.md)
 
 バイナリ名は `rf-analyze` です。
 
@@ -24,7 +30,7 @@
 rustc --version
 ```
 
-このディレクトリには [rust-toolchain.toml](/Users/kitazzz/.superset/projects/recast-forge/rust-analyzer/rust-toolchain.toml) を置いてあり、`rustup` 管理の環境なら 1.92.0 を使う前提です。
+このディレクトリには [`rust-toolchain.toml`](rust-toolchain.toml) を置いてあり、`rustup` 管理の環境なら 1.92.0 を使う前提です。
 
 `rustup` を使っている場合:
 
@@ -121,9 +127,10 @@ rf-analyze [OPTIONS] <FILE>
 - `--json`: JSON で出力する
 - `--predicates`: predicate を含める
 - `--effects`: effect を含める
+- `--data-flow`: local def-use / data-flow を含める
 - `--decision`: decision table を含める
 - `--decision-enhanced`: decision table を CFG 拡張モードで出す
-- `--all`: `predicates` / `effects` / `decision` / `call-graph` をまとめて有効化する
+- `--all`: `predicates` / `effects` / `data-flow` / `decision` / `call-graph` をまとめて有効化する
 - `--function <FUNCTION>`: 特定シンボルだけに絞る
 - `--call-graph`: call graph を JSON 出力に含める
 - `--call-graph-dot <FUNCTION>`: 指定した function からの到達可能な呼び出しグラフを DOT で stdout に出す
@@ -161,6 +168,12 @@ predicate と effect を JSON で見る:
 rf-analyze ../samples/usecase/approveOrder.ts --predicates --effects --json
 ```
 
+data flow を JSON で見る:
+
+```sh
+rf-analyze ../samples/usecase/approveOrder.ts --data-flow --json
+```
+
 decision table まで含めて出す:
 
 ```sh
@@ -195,6 +208,12 @@ Graph IR と decision point をまとめて JSON で見る:
 
 ```sh
 rf-analyze ../samples/usecase/approveOrder.ts --graph --decision
+```
+
+Graph IR に data flow も含めて見る:
+
+```sh
+rf-analyze ../samples/usecase/approveOrder.ts --graph --data-flow
 ```
 
 call graph を DOT で出す（execute からの到達可能グラフ）:
@@ -251,9 +270,10 @@ JSON では各シンボルごとに `FunctionReport` 相当のオブジェクト
 - `metrics`: 複雑性メトリクス
 - `predicates`: 条件式の抽出結果
 - `effects`: `return` / `throw` / call / assignment などの抽出結果
+- `dataFlow`: local intraprocedural def-use / data-flow 結果
 - `decisionTable`: decision table / MC/DC-like ケース
-- `callGraph`: ファイル内呼び出しグラフ（`--call-graph` または `--all` 時）
-- `graph`: unified Graph IR（`--graph` 時）
+
+`callGraph` と `graph` は `FunctionReport` の中ではなく、トップレベルのオブジェクト形式で返ります。
 
 ### JSON 出力形式の注意
 
@@ -261,7 +281,7 @@ JSON では各シンボルごとに `FunctionReport` 相当のオブジェクト
 
 ```json
 {
-  "functions": [ /* FunctionReport の配列 */ ],
+  "functions": [ /* FunctionReport の配列。--data-flow 時は dataFlow を含む */ ],
   "callGraph": { "nodes": [...], "edges": [...], "imports": [...] },
   "graph": { "filePath": "...", "nodes": [...], "edges": [...] }
 }
@@ -318,6 +338,21 @@ JSON では各シンボルごとに `FunctionReport` 相当のオブジェクト
 - `text`
 - `line`
 
+### data flow
+
+`--data-flow` または `--all` を付けると、関数ごとに `dataFlow` を返します。
+
+- `defs`: local binding / assignment / for-binding / catch-binding の定義点
+- `uses`: identifier read / `this.field` read の使用点
+- `defUseEdges`: 到達した定義から使用への edge
+
+`defUseEdges[].mayReach` は分岐マージ由来の「一部分岐でのみ到達する」edge を表します。
+
+- `false`: must-reach。再定義されずに到達
+- `true`: may-reach。分岐の一部でのみ到達
+
+初期化なし宣言（`let x: number;`）は `defs` には入りますが、reaching def には入らないため `defUseEdges` の source にはなりません。
+
 ### decision table
 
 `--decision` または `--all` を付けると、次を返します。
@@ -354,7 +389,7 @@ decision_table:
 - `failure_when_false`: `return { ok: false }` のように、`false` なら失敗とみなすキー
 - `failure_when_present`: `return { error: '...' }` のように、キーが存在したら失敗とみなすキー
 
-未指定時は上のデフォルトが使われます。サンプルは [config.yaml.example](/Users/kitazzz/.superset/projects/recast-forge/rust-analyzer/config.yaml.example) にあります。
+未指定時は上のデフォルトが使われます。サンプルは [`config.yaml.example`](config.yaml.example) にあります。
 
 この出力は厳密な形式検証としての strict MC/DC ではなく、現状は branch-sensitive な近似出力です。
 
@@ -378,9 +413,11 @@ decision_table:
 | kind | 例 | 解決 |
 |------|---|------|
 | `direct` | `canTransition()` | 同一ファイル内関数 or import に解決 |
-| `thisMethod` | `this.checkRisk()` | 同一クラス内メソッドに解決 |
+| `thisMethod` | `this.checkRisk()` | 同一クラスまたは親クラスのメソッドに解決 |
 | `memberCall` | `this.orderRepo.findById()` | 未解決（receiver chain を記録） |
-| `super` | `super.method()` | 未解決（親クラス解決は将来対応） |
+| `super` | `super.method()` | 親クラスチェーン上のメソッドに解決 |
+| `superConstructor` | `super()` | 親クラスの constructor に解決 |
+| `new` | `new Foo()` | 同一ファイル class / function または import に解決 |
 
 `callee` が `null` の edge は未解決です。`importSource` がある場合はインポート経由の外部呼び出しです。
 
@@ -399,9 +436,9 @@ decision_table:
 
 `--graph` は file-scope の unified Graph IR を返します。ノードとエッジの基本形は次です。
 
-- `nodes[].kind`: `function` / `class` / `method` / `callSite` / `externalSymbol` / `decisionPoint` / `cfgBlock`
+- `nodes[].kind`: `function` / `class` / `method` / `callSite` / `externalSymbol` / `decisionPoint` / `cfgBlock` / `dataFlowDef` / `dataFlowUse`
 - `nodes[].loc`: `line`, `spanStart`, `spanEnd`
-- `edges[].kind.type`: `contains` / `call` / `decisionBranch` / `cfg`
+- `edges[].kind.type`: `contains` / `call` / `decisionBranch` / `cfg` / `dataDep`
 
 現在の構成は次のとおりです。
 
@@ -410,6 +447,8 @@ decision_table:
 - callsite `-[call]->` internal callee または external symbol
 - function `-[contains]->` decision point
 - decision point `-[decisionBranch]->` 次の decision point（truth row 由来の要約 edge）
+- function `-[contains]->` dataFlowDef / dataFlowUse（`--data-flow` または `--all` 時）
+- dataFlowDef `-[dataDep]->` dataFlowUse
 - function `-[contains]->` cfgBlock（`cfg-analysis` 付きビルド時）
 - cfgBlock `-[cfg]->` cfgBlock
 
@@ -417,8 +456,10 @@ decision_table:
 
 - `CallSite` は call expression の span を持ちます
 - `ExternalSymbol` はローカルソース上の span を持ちません
+- `DataFlowDef` / `DataFlowUse` は source location を保持します
 - decision graph はまだ outcome node まで含む完全 DAG ではありません。現状の `decisionBranch` は truth row から導いた summary edge です
 - `--graph` 単体では decision point は出ません。`--decision` または `--all` を併用したときだけ含まれます
+- `--graph` 単体では data-flow ノードは出ません。`--data-flow` または `--all` を併用したときだけ含まれます
 
 例:
 
@@ -455,11 +496,12 @@ dot -Tsvg callgraph.dot -o callgraph.svg
 - その `contains` 子孫
 - そこから出る `call` / `cfg` / `decisionBranch` の 1-hop target
 
-`--decision` を付けると decision point と `decisionBranch` も含まれます。`cfg-analysis` 付きビルドなら `cfgBlock` も含まれます。
+`--decision` を付けると decision point と `decisionBranch` も含まれます。`--data-flow` を付けると `dataFlowDef` / `dataFlowUse` と橙色の `dataDep` edge も含まれます。`cfg-analysis` 付きビルドなら `cfgBlock` も含まれます。
 
 ```sh
 rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
 rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --decision
+rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --data-flow
 ```
 
 ### CFG / DOT
@@ -559,6 +601,9 @@ rf-analyze ../samples/usecase/placeOrder.ts --json
 # 詳細全部
 rf-analyze ../samples/usecase/placeOrder.ts --all --json
 
+# data-flow のみ JSON
+rf-analyze ../samples/usecase/placeOrder.ts --data-flow --json
+
 # CFG 拡張付き decision table
 rf-analyze ../samples/usecase/approveOrder.ts --decision --decision-enhanced --json
 
@@ -570,6 +615,9 @@ rf-analyze ../samples/usecase/approveOrder.ts --graph
 
 # Graph IR + decision points
 rf-analyze ../samples/usecase/approveOrder.ts --graph --decision
+
+# Graph IR + data-flow
+rf-analyze ../samples/usecase/approveOrder.ts --graph --data-flow
 
 # call graph DOT（エントリポイント指定）
 rf-analyze ../samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute'

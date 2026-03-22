@@ -4,14 +4,14 @@
 
 TypeScript コードベースに対して静的解析を行い、関数ごとの複雑さ、条件分岐の構造、ルールエンジン化候補、さらに将来的な真理値表 / MC/DC / プロパティテスト生成までつなげる analyzer を構築する。
 
-当面は `ts-morph` を用いて方向性を固め、その後必要に応じて Rust / Oxc 系へ移行する。
+現在の主実装は Rust / Oxc ベースの `rust-analyzer/` にあり、`ts-morph` 側は初期探索・仕様固めの履歴として扱う。
 
 ---
 
 ## Current Strategy
 
-- まずは `ts-morph` で探索・仕様固めを行う
-- いきなり Rust へは行かない
+- 現在の主実装は Rust / Oxc ベースの `rust-analyzer/` にある
+- `ts-morph` 側は初期探索・仕様固めの履歴として残し、必要な試作に限定して使う
 - 単なる complexity analyzer ではなく、最終的には
   - rule candidate detection
   - logic extraction
@@ -158,6 +158,7 @@ TypeScript 関数ごとの基本複雑性を安定して計測できる CLI を�
 - decision logic builder
 - truth table generator
 - MC/DC generator
+- local intraprocedural def-use / data-flow foundation
 - infeasible combination detector
 - input materializer
 - property test renderer
@@ -222,20 +223,21 @@ LLM が解釈しやすい形に解析結果を整え、fact / decision / action 
 ### 3. 関数全体を論理化しない
 関数全体を真理値表化するのではなく、**decision / predicate / effect** に分解して扱う。
 
-### 4. ts-morph は探索フェーズ
-当面は `ts-morph` で
+### 4. `ts-morph` は初期探索の履歴
+`ts-morph` 実装は、次を固めるための初期探索として残す。
 - 欲しい出力
 - 効くメトリクス
 - 抽出すべき構造
-を固める。
 
-### 5. Rust / Oxc は後続
-以下が必要になったら Rust / Oxc へ進む:
-- AST walk では限界
-- intraprocedural CFG が必要
-- function summary が必要
-- ts-morph では性能不足
-- analyzer core を独立させたい
+主系の analyzer 開発は `rust-analyzer/` 側で進める。
+
+### 5. Rust / Oxc を主系として伸ばす
+現在の優先は Rust / Oxc 実装を前提に次を積み上げること。
+- intraprocedural CFG の強化
+- local def-use / data-flow の活用
+- function summary / interprocedural 解析
+- Graph IR を SDG / CPG へ拡張
+- analyzer core の独立性と実行性能の向上
 
 ---
 
