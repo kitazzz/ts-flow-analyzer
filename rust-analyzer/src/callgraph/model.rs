@@ -76,6 +76,8 @@ pub struct CallGraphNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub class_name: Option<String>,
     pub start_line: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_class: Option<String>,
 }
 
 #[derive(Debug, Clone)]

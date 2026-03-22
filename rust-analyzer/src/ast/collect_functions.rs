@@ -36,6 +36,8 @@ pub struct CollectedFunction<'a> {
     pub member_name: Option<String>,
     pub node: FunctionNode<'a>,
     pub start_line: u32,
+    pub parent_class: Option<String>,
+    pub is_abstract: bool,
 }
 
 pub fn collect_functions<'a>(program: &'a Program<'a>, source: &str) -> Vec<CollectedFunction<'a>> {
@@ -79,6 +81,8 @@ fn collect_from_statement<'a>(
                     member_name: Some(name),
                     node: FunctionNode::Function(func),
                     start_line: line,
+                    parent_class: None,
+                    is_abstract: false,
                 });
             }
         }
@@ -102,6 +106,8 @@ fn collect_from_statement<'a>(
                                 member_name: Some(name),
                                 node: FunctionNode::Function(func),
                                 start_line: line,
+                                parent_class: None,
+                                is_abstract: false,
                             });
                         }
                     }
@@ -127,6 +133,8 @@ fn collect_from_statement<'a>(
                         member_name: Some(name),
                         node: FunctionNode::Function(func),
                         start_line: line,
+                        parent_class: None,
+                        is_abstract: false,
                     });
                 }
             }
@@ -160,6 +168,8 @@ fn collect_from_var_decl<'a>(
                         member_name: Some(name),
                         node: FunctionNode::Function(func),
                         start_line: line,
+                        parent_class: None,
+                        is_abstract: false,
                     });
                 }
                 Expression::ArrowFunctionExpression(arrow) => {
@@ -171,6 +181,8 @@ fn collect_from_var_decl<'a>(
                         member_name: Some(name),
                         node: FunctionNode::Arrow(arrow),
                         start_line: line,
+                        parent_class: None,
+                        is_abstract: false,
                     });
                 }
                 _ => {}
@@ -189,6 +201,15 @@ fn collect_from_class<'a>(
         .as_ref()
         .map(|id| id.name.to_string())
         .unwrap_or_default();
+
+    let parent_class = class.super_class.as_ref().and_then(|expr| {
+        if let Expression::Identifier(ident) = expr {
+            Some(ident.name.to_string())
+        } else {
+            None
+        }
+    });
+
     if !class_name.is_empty() {
         let line = span_line(source, class.span.start);
         results.push(CollectedFunction {
@@ -198,6 +219,8 @@ fn collect_from_class<'a>(
             member_name: None,
             node: FunctionNode::Class(class),
             start_line: line,
+            parent_class: parent_class.clone(),
+            is_abstract: false,
         });
     }
 
@@ -215,6 +238,7 @@ fn collect_from_class<'a>(
                 } else {
                     method_name.clone()
                 };
+                let is_abstract = method.value.body.is_none();
                 let line = span_line(source, method.span.start);
                 results.push(CollectedFunction {
                     symbol_name: symbol_name.clone(),
@@ -227,6 +251,8 @@ fn collect_from_class<'a>(
                     member_name: Some(method_name),
                     node: FunctionNode::Function(&method.value),
                     start_line: line,
+                    parent_class: parent_class.clone(),
+                    is_abstract,
                 });
             }
             _ => {}

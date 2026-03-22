@@ -34,6 +34,14 @@ pub fn functions_to_graph(
             Some(func.symbol_name.clone()),
             loc,
         );
+
+        if let Some(parent) = &func.parent_class {
+            builder.nodes.last_mut().unwrap().properties.insert(
+                "parentClass".to_string(),
+                serde_json::Value::String(parent.clone()),
+            );
+        }
+
         symbol_map.insert(func.symbol_name.clone(), id);
 
         // Track class nodes
