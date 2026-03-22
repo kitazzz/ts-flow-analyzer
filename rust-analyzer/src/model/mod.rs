@@ -109,7 +109,7 @@ pub struct Effect {
     pub line: u32,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EffectKind {
     Return,

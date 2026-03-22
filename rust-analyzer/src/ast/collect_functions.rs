@@ -29,6 +29,13 @@ impl<'a> FunctionNode<'a> {
 }
 
 #[derive(Debug)]
+pub struct FieldInitializer<'a> {
+    pub field_name: String,
+    pub value: &'a Expression<'a>,
+    pub span: oxc_span::Span,
+}
+
+#[derive(Debug)]
 pub struct CollectedFunction<'a> {
     pub symbol_name: String,
     pub symbol_kind: SymbolKind,
@@ -38,6 +45,8 @@ pub struct CollectedFunction<'a> {
     pub start_line: u32,
     pub parent_class: Option<String>,
     pub is_abstract: bool,
+    pub field_initializers: Vec<FieldInitializer<'a>>,
+    pub has_implicit_super: bool,
 }
 
 pub fn collect_functions<'a>(program: &'a Program<'a>, source: &str) -> Vec<CollectedFunction<'a>> {
@@ -83,6 +92,8 @@ fn collect_from_statement<'a>(
                     start_line: line,
                     parent_class: None,
                     is_abstract: false,
+                    field_initializers: Vec::new(),
+                    has_implicit_super: false,
                 });
             }
         }
@@ -108,6 +119,8 @@ fn collect_from_statement<'a>(
                                 start_line: line,
                                 parent_class: None,
                                 is_abstract: false,
+                                field_initializers: Vec::new(),
+                                has_implicit_super: false,
                             });
                         }
                     }
@@ -135,6 +148,8 @@ fn collect_from_statement<'a>(
                         start_line: line,
                         parent_class: None,
                         is_abstract: false,
+                        field_initializers: Vec::new(),
+                        has_implicit_super: false,
                     });
                 }
             }
@@ -170,6 +185,8 @@ fn collect_from_var_decl<'a>(
                         start_line: line,
                         parent_class: None,
                         is_abstract: false,
+                        field_initializers: Vec::new(),
+                        has_implicit_super: false,
                     });
                 }
                 Expression::ArrowFunctionExpression(arrow) => {
@@ -183,6 +200,8 @@ fn collect_from_var_decl<'a>(
                         start_line: line,
                         parent_class: None,
                         is_abstract: false,
+                        field_initializers: Vec::new(),
+                        has_implicit_super: false,
                     });
                 }
                 _ => {}
@@ -221,10 +240,35 @@ fn collect_from_class<'a>(
             start_line: line,
             parent_class: parent_class.clone(),
             is_abstract: false,
+            field_initializers: Vec::new(),
+            has_implicit_super: false,
         });
     }
 
-    // Collect methods
+    // Pass 1: Collect field initializers from PropertyDefinition
+    let mut field_inits: Vec<FieldInitializer<'a>> = Vec::new();
+    for element in &class.body.body {
+        if let ClassElement::PropertyDefinition(prop) = element {
+            if prop.r#static || prop.declare {
+                continue;
+            }
+            if let Some(ref value) = prop.value {
+                let field_name = match &prop.key {
+                    PropertyKey::StaticIdentifier(id) => id.name.to_string(),
+                    PropertyKey::PrivateIdentifier(id) => format!("#{}", id.name),
+                    _ => continue,
+                };
+                field_inits.push(FieldInitializer {
+                    field_name,
+                    value,
+                    span: prop.span,
+                });
+            }
+        }
+    }
+
+    // Pass 2: Collect methods, attaching field_inits to constructor
+    let mut has_constructor = false;
     for element in &class.body.body {
         match element {
             ClassElement::MethodDefinition(method) => {
@@ -238,10 +282,14 @@ fn collect_from_class<'a>(
                 } else {
                     method_name.clone()
                 };
+                let is_ctor = method.kind.is_constructor();
+                if is_ctor {
+                    has_constructor = true;
+                }
                 let is_abstract = method.value.body.is_none();
                 let line = span_line(source, method.span.start);
                 results.push(CollectedFunction {
-                    symbol_name: symbol_name.clone(),
+                    symbol_name,
                     symbol_kind: SymbolKind::Method,
                     class_name: if !class_name.is_empty() {
                         Some(class_name.clone())
@@ -253,9 +301,34 @@ fn collect_from_class<'a>(
                     start_line: line,
                     parent_class: parent_class.clone(),
                     is_abstract,
+                    field_initializers: if is_ctor {
+                        std::mem::take(&mut field_inits)
+                    } else {
+                        Vec::new()
+                    },
+                    has_implicit_super: false,
                 });
             }
             _ => {}
         }
+    }
+
+    // Synthetic constructor: no explicit constructor but has field initializers
+    if !has_constructor && !field_inits.is_empty() && !class_name.is_empty() {
+        let symbol_name = format!("{}#constructor", class_name);
+        let line = span_line(source, class.span.start);
+        let is_derived = parent_class.is_some();
+        results.push(CollectedFunction {
+            symbol_name,
+            symbol_kind: SymbolKind::Method,
+            class_name: Some(class_name.clone()),
+            member_name: Some("constructor".to_string()),
+            node: FunctionNode::Class(class),
+            start_line: line,
+            parent_class: parent_class.clone(),
+            is_abstract: false,
+            field_initializers: std::mem::take(&mut field_inits),
+            has_implicit_super: is_derived,
+        });
     }
 }

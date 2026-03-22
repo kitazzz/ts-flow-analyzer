@@ -22,12 +22,12 @@ use callgraph::build_call_graph;
 use cli::Cli;
 use config::load_config;
 use decision::table::build_decision_table;
-use effects::extract::extract_effects;
+use effects::extract::{extract_effects, extract_field_initializer_effects, extract_parameter_property_effects};
 use metrics::complexity::analyze_basic_complexity;
 use metrics::cyclomatic::analyze_cyclomatic_complexity;
 use metrics::function_nesting::analyze_function_nesting;
 use metrics::nesting::analyze_max_nesting_depth;
-use model::{FunctionMetrics, FunctionReport, SymbolKind};
+use model::{Effect, EffectKind, FunctionMetrics, FunctionReport, SideEffectClass, SymbolKind};
 use predicates::extract::extract_predicates;
 use predicates::normalize::normalize_predicates;
 
@@ -214,7 +214,60 @@ fn main() {
         };
 
         let effects = if include_effects {
-            stmts.map(|s| extract_effects(s, &source))
+            let mut body_effs = stmts
+                .map(|s| extract_effects(s, &source))
+                .unwrap_or_default();
+
+            if func.member_name.as_deref() == Some("constructor") {
+                // Build synthetic effects from field initializers + parameter properties
+                let mut init_effs = Vec::new();
+                init_effs.extend(extract_field_initializer_effects(
+                    &func.field_initializers,
+                    &source,
+                ));
+                if let FunctionNode::Function(f) = &func.node {
+                    init_effs.extend(extract_parameter_property_effects(f, &source));
+                }
+
+                let is_derived = func.parent_class.is_some();
+
+                if is_derived {
+                    if func.has_implicit_super {
+                        // Synthetic constructor (no explicit body): super() → init_effs
+                        let mut combined = Vec::new();
+                        combined.push(Effect {
+                            kind: EffectKind::Call,
+                            side_effect: SideEffectClass::PureCall,
+                            text: "super() /* implicit */".to_string(),
+                            line: func.start_line,
+                        });
+                        combined.extend(init_effs);
+                        body_effs = combined;
+                    } else if !init_effs.is_empty() {
+                        // Explicit constructor: insert init_effs after super() call
+                        let super_pos = body_effs.iter().position(|e| {
+                            e.kind == EffectKind::Call
+                                && e.text.trim_start().starts_with("super(")
+                        });
+                        let insert_at = super_pos.map(|p| p + 1).unwrap_or(0);
+                        let mut combined = body_effs[..insert_at].to_vec();
+                        combined.extend(init_effs);
+                        combined.extend_from_slice(&body_effs[insert_at..]);
+                        body_effs = combined;
+                    }
+                } else if !init_effs.is_empty() {
+                    // Non-derived class: prepend init effects before body
+                    let mut combined = init_effs;
+                    combined.append(&mut body_effs);
+                    body_effs = combined;
+                }
+            }
+
+            if body_effs.is_empty() {
+                None
+            } else {
+                Some(body_effs)
+            }
         } else {
             None
         };

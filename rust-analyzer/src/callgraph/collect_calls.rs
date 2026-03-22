@@ -2,6 +2,12 @@ use oxc_ast::ast::*;
 
 use super::model::{CallKind, CallSite};
 
+pub fn collect_calls_from_expr(expr: &Expression<'_>, source: &str) -> Vec<CallSite> {
+    let mut results = Vec::new();
+    collect_from_expr(expr, source, &mut results);
+    results
+}
+
 pub fn collect_calls(stmts: &[Statement<'_>], source: &str) -> Vec<CallSite> {
     let mut results = Vec::new();
     for stmt in stmts {
@@ -150,6 +156,27 @@ fn collect_from_expr(expr: &Expression<'_>, source: &str, out: &mut Vec<CallSite
             collect_from_expr(&tagged.tag, source, out);
         }
         Expression::NewExpression(new_expr) => {
+            // Emit a CallSite for the new expression itself
+            let callee_text = source_text(source, new_expr.span.start, new_expr.span.end);
+            let line = span_line(source, new_expr.span.start);
+            let target_name = match &new_expr.callee {
+                Expression::Identifier(id) => id.name.to_string(),
+                _ => source_text(
+                    source,
+                    new_expr.callee.span().start,
+                    new_expr.callee.span().end,
+                ),
+            };
+            out.push(CallSite {
+                kind: CallKind::New,
+                callee_text,
+                target_name,
+                receiver: None,
+                line,
+                span_start: new_expr.span.start,
+                span_end: new_expr.span.end,
+            });
+            // Also collect calls within arguments
             for arg in &new_expr.arguments {
                 match arg {
                     Argument::SpreadElement(spread) => {
@@ -271,6 +298,16 @@ fn classify_call(
                 span_end: call_end,
             }
         }
+        // super() — bare constructor call
+        Expression::Super(_) => CallSite {
+            kind: CallKind::SuperConstructor,
+            callee_text,
+            target_name: "constructor".to_string(),
+            receiver: Some("super".to_string()),
+            line,
+            span_start: call_start,
+            span_end: call_end,
+        },
         _ => CallSite {
             kind: CallKind::MemberCall,
             callee_text,

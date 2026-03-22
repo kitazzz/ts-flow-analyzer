@@ -7,6 +7,8 @@ pub enum CallKind {
     ThisMethod,
     MemberCall,
     Super,
+    SuperConstructor,
+    New,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -109,6 +111,8 @@ impl std::fmt::Display for CallKind {
             CallKind::ThisMethod => write!(f, "thisMethod"),
             CallKind::MemberCall => write!(f, "memberCall"),
             CallKind::Super => write!(f, "super"),
+            CallKind::SuperConstructor => write!(f, "superConstructor"),
+            CallKind::New => write!(f, "new"),
         }
     }
 }

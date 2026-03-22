@@ -1,3 +1,7 @@
+use oxc_span::GetSpan;
+
+use crate::ast::collect_functions::FieldInitializer;
+use crate::callgraph::collect_calls::collect_calls_from_expr;
 use crate::model::{Effect, EffectKind, SideEffectClass};
 use oxc_ast::ast::*;
 
@@ -228,4 +232,80 @@ fn is_match_external(text: &str) -> bool {
         }
     }
     false
+}
+
+/// Extract synthetic Assignment effects from TypeScript parameter properties
+/// (parameters with accessibility modifiers or `readonly`).
+/// Also extracts Call effects from default initializers on those parameters.
+pub fn extract_parameter_property_effects(func: &Function<'_>, source: &str) -> Vec<Effect> {
+    let mut results = Vec::new();
+    for param in &func.params.items {
+        if param.accessibility.is_none() && !param.readonly {
+            continue;
+        }
+        let name = match &param.pattern {
+            BindingPattern::BindingIdentifier(id) => id.name.to_string(),
+            _ => continue,
+        };
+        let line = span_line(source, param.span.start);
+        // If there's a default initializer, include it in the assignment text and extract calls
+        if let Some(ref init) = param.initializer {
+            let init_text = source[init.span().start as usize..init.span().end as usize]
+                .trim()
+                .to_string();
+            results.push(Effect {
+                kind: EffectKind::Assignment,
+                side_effect: SideEffectClass::StateWrite,
+                text: format!("this.{} = {} /* parameter property, default: {} */", name, name, init_text),
+                line,
+            });
+            for call_site in collect_calls_from_expr(init, source) {
+                results.push(Effect {
+                    kind: EffectKind::Call,
+                    side_effect: classify_call_side_effect(&call_site.callee_text),
+                    text: call_site.callee_text,
+                    line: call_site.line,
+                });
+            }
+        } else {
+            results.push(Effect {
+                kind: EffectKind::Assignment,
+                side_effect: SideEffectClass::StateWrite,
+                text: format!("this.{} = {} /* parameter property */", name, name),
+                line,
+            });
+        }
+    }
+    results
+}
+
+/// Extract Assignment and Call effects from class field initializers.
+pub fn extract_field_initializer_effects(
+    initializers: &[FieldInitializer<'_>],
+    source: &str,
+) -> Vec<Effect> {
+    let mut results = Vec::new();
+    for fi in initializers {
+        let line = span_line(source, fi.span.start);
+        let init_text = source[fi.value.span().start as usize..fi.value.span().end as usize]
+            .trim()
+            .to_string();
+        // Field assignment itself is a StateWrite
+        results.push(Effect {
+            kind: EffectKind::Assignment,
+            side_effect: SideEffectClass::StateWrite,
+            text: format!("this.{} = {}", fi.field_name, init_text),
+            line,
+        });
+        // Extract calls within the initializer expression
+        for call_site in collect_calls_from_expr(fi.value, source) {
+            results.push(Effect {
+                kind: EffectKind::Call,
+                side_effect: classify_call_side_effect(&call_site.callee_text),
+                text: call_site.callee_text,
+                line: call_site.line,
+            });
+        }
+    }
+    results
 }

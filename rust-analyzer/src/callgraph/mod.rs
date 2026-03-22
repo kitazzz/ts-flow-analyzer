@@ -13,9 +13,9 @@ use crate::ast::collect_functions::{CollectedFunction, FunctionNode};
 use crate::model::SymbolKind;
 
 use classify::classify_call;
-use collect_calls::collect_calls;
+use collect_calls::{collect_calls, collect_calls_from_expr};
 use collect_imports::collect_imports;
-use model::{CallCategory, CallEdge, CallGraphData, CallGraphNode, CallKind, ResolvedTarget};
+use model::{CallCategory, CallEdge, CallGraphData, CallGraphNode, CallKind, CallSite, ResolvedTarget};
 use resolve::resolve_call;
 
 fn get_statements<'a>(node: &'a FunctionNode<'a>) -> Option<&'a [Statement<'a>]> {
@@ -94,14 +94,51 @@ pub fn build_call_graph<'a>(
     let mut edges = Vec::new();
 
     for func in collected {
-        if matches!(func.node, FunctionNode::Class(_)) {
+        // Skip Class nodes unless they are synthetic constructors (field_initializers present)
+        let is_synthetic_ctor =
+            matches!(func.node, FunctionNode::Class(_)) && !func.field_initializers.is_empty();
+        if matches!(func.node, FunctionNode::Class(_)) && !is_synthetic_ctor {
             continue;
         }
-        let stmts = match get_statements(&func.node) {
-            Some(s) => s,
-            None => continue,
-        };
-        let calls = collect_calls(stmts, source);
+
+        let stmts = get_statements(&func.node);
+        let mut calls = stmts
+            .map(|s| collect_calls(s, source))
+            .unwrap_or_default();
+
+        // Synthetic constructor: add implicit super() CallSite for derived classes
+        if func.has_implicit_super {
+            calls.push(CallSite {
+                kind: CallKind::SuperConstructor,
+                callee_text: "super()".to_string(),
+                target_name: "constructor".to_string(),
+                receiver: Some("super".to_string()),
+                line: func.start_line,
+                span_start: func.node.span().start,
+                span_end: func.node.span().start,
+            });
+        }
+
+        // Collect calls from field initializer expressions
+        for fi in &func.field_initializers {
+            calls.extend(collect_calls_from_expr(fi.value, source));
+        }
+
+        // Collect calls from parameter property default initializers
+        if let FunctionNode::Function(f) = &func.node {
+            for param in &f.params.items {
+                if param.accessibility.is_none() && !param.readonly {
+                    continue;
+                }
+                if let Some(ref init) = param.initializer {
+                    calls.extend(collect_calls_from_expr(init, source));
+                }
+            }
+        }
+
+        if calls.is_empty() {
+            continue;
+        }
         for call in calls {
             let resolved =
                 resolve_call(&call, func.class_name.as_deref(), collected, &imports, &hierarchy);
@@ -213,7 +250,13 @@ pub fn build_call_graph<'a>(
 
     let nodes = collected
         .iter()
-        .filter(|f| !matches!(f.node, FunctionNode::Class(_)))
+        .filter(|f| {
+            if matches!(f.node, FunctionNode::Class(_)) {
+                // Include synthetic constructors (Class node with field_initializers)
+                return !f.field_initializers.is_empty();
+            }
+            true
+        })
         .map(|f| CallGraphNode {
             symbol_name: f.symbol_name.clone(),
             kind: f.symbol_kind.to_string(),
