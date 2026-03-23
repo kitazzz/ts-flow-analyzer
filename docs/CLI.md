@@ -83,16 +83,30 @@ cargo install --path analyzer --features cfg-analysis --force
 
 ## クイックスタート
 
+最初に覚えるのはこの 4 パターンで十分です。
+
 最小実行:
 
 ```sh
 ts-flow-analyzer /absolute/path/to/file.ts
 ```
 
-JSON で詳細出力:
+JSON で一通り見る:
 
 ```sh
 ts-flow-analyzer /absolute/path/to/file.ts --all --json
+```
+
+Graph IR まで見る:
+
+```sh
+ts-flow-analyzer /absolute/path/to/file.ts --graph --decision --data-flow
+```
+
+特定メソッドだけを見る:
+
+```sh
+ts-flow-analyzer /absolute/path/to/file.ts --function 'ClassName#methodName'
 ```
 
 このリポジトリのサンプルを解析する場合:
@@ -121,21 +135,37 @@ ts-flow-analyzer [OPTIONS] <FILE>
 
 ### オプション
 
+最初は `--all --json` から始めるのが一番わかりやすいです。`--graph` は別系統の大きい出力なので、必要になってから足す方が見やすいです。
+
+入力:
+
 - `--config <PATH>`: analyzer 設定 YAML を明示指定する
+
+出力と絞り込み:
+
 - `--json`: JSON で出力する
+- `--function <FUNCTION>`: 特定シンボルだけに絞る
+
+解析レイヤ:
+
+- `--all`: `predicates` / `effects` / `data-flow` / `decision` / `call-graph` をまとめて有効化する
 - `--predicates`: predicate を含める
 - `--effects`: effect を含める
 - `--data-flow`: local def-use / data-flow を含める
 - `--decision`: decision table を含める
-- `--decision-enhanced`: decision table を CFG 拡張モードで出す
-- `--all`: `predicates` / `effects` / `data-flow` / `decision` / `call-graph` をまとめて有効化する
-- `--function <FUNCTION>`: 特定シンボルだけに絞る
 - `--call-graph`: call graph を JSON 出力に含める
-- `--call-graph-dot <FUNCTION>`: 指定した function からの到達可能な呼び出しグラフを DOT で stdout に出す
-- `--include-builtin-calls`: builtin/collection メソッド（`reduce`, `some`, `toLocaleString` 等）を call graph に含める（デフォルトでは非表示）
 - `--graph`: unified Graph IR を JSON 出力に含める（`--json` を暗黙に有効化）
+
+DOT 可視化:
+
+- `--call-graph-dot <FUNCTION>`: 指定した function からの到達可能な呼び出しグラフを DOT で stdout に出す
 - `--graph-dot <FUNCTION>`: 指定した function / method を起点に Graph IR を DOT で stdout に出す
 - `--cfg-dot <FUNCTION>`: 指定した function / method の CFG を DOT で stdout に出す
+
+高度なオプション:
+
+- `--decision-enhanced`: decision table を CFG 拡張モードで出す
+- `--include-builtin-calls`: builtin/collection メソッド（`reduce`, `some`, `toLocaleString` 等）を call graph に含める（デフォルトでは非表示）
 
 補足:
 

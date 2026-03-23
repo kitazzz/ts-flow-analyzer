@@ -22,14 +22,16 @@ use ast::collect_functions::{collect_functions, FunctionNode};
 use callgraph::build_call_graph;
 use cli::Cli;
 use config::load_config;
+use dataflow::analyze::analyze_data_flow;
 use decision::table::build_decision_table;
-use effects::extract::{extract_effects, extract_field_initializer_effects, extract_parameter_property_effects};
+use effects::extract::{
+    extract_effects, extract_field_initializer_effects, extract_parameter_property_effects,
+};
 use metrics::complexity::analyze_basic_complexity;
 use metrics::cyclomatic::analyze_cyclomatic_complexity;
 use metrics::function_nesting::analyze_function_nesting;
 use metrics::nesting::analyze_max_nesting_depth;
 use model::{Effect, EffectKind, FunctionMetrics, FunctionReport, SideEffectClass, SymbolKind};
-use dataflow::analyze::analyze_data_flow;
 use predicates::extract::extract_predicates;
 use predicates::normalize::normalize_predicates;
 
@@ -71,8 +73,8 @@ fn main() {
     let collected = collect_functions(&ret.program, &source);
 
     // Build CFG context when needed (cfg-analysis feature + --decision-enhanced, --cfg-dot, or --graph)
-    let _need_cfg = cli.decision_enhanced || cli.cfg_dot.is_some()
-        || cli.graph || cli.graph_dot.is_some();
+    let _need_cfg =
+        cli.decision_enhanced || cli.cfg_dot.is_some() || cli.graph || cli.graph_dot.is_some();
 
     #[cfg(feature = "cfg-analysis")]
     let cfg_ctx = _need_cfg.then(|| control_flow::build_cfg_context(&ret.program));
@@ -156,25 +158,33 @@ fn main() {
         ir::from_callgraph::callgraph_to_graph(&cg, &symbol_map, &mut builder);
         // Decision tables (gated by --decision / --all)
         if include_decision {
-        for func in &collected {
-            if matches!(func.node, FunctionNode::Class(_)) { continue; }
-            if let Some(dt) = build_decision_table(
-                &func.node, &func.symbol_name, &func.symbol_kind.to_string(),
-                &source, &config.decision_table, cli.decision_enhanced,
-                #[cfg(feature = "cfg-analysis")]
-                cfg_ctx.as_ref().filter(|_| cli.decision_enhanced),
-            ) {
-                if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
-                    ir::from_decision::decision_to_graph(&dt, parent_id, &mut builder);
+            for func in &collected {
+                if matches!(func.node, FunctionNode::Class(_)) {
+                    continue;
+                }
+                if let Some(dt) = build_decision_table(
+                    &func.node,
+                    &func.symbol_name,
+                    &func.symbol_kind.to_string(),
+                    &source,
+                    &config.decision_table,
+                    cli.decision_enhanced,
+                    #[cfg(feature = "cfg-analysis")]
+                    cfg_ctx.as_ref().filter(|_| cli.decision_enhanced),
+                ) {
+                    if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
+                        ir::from_decision::decision_to_graph(&dt, parent_id, &mut builder);
+                    }
                 }
             }
-        }
         }
         #[cfg(feature = "cfg-analysis")]
         {
             if let Some(ref ctx) = cfg_ctx {
                 for func in &collected {
-                    if matches!(func.node, FunctionNode::Class(_)) { continue; }
+                    if matches!(func.node, FunctionNode::Class(_)) {
+                        continue;
+                    }
                     if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
                         ir::from_cfg::cfg_to_graph(ctx, &func.node, parent_id, &mut builder);
                     }
@@ -184,12 +194,15 @@ fn main() {
         // Data-flow → Graph IR
         if include_data_flow {
             for func in &collected {
-                if matches!(func.node, FunctionNode::Class(_)) { continue; }
+                if matches!(func.node, FunctionNode::Class(_)) {
+                    continue;
+                }
                 if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
                     let df_report = match &func.node {
-                        FunctionNode::Function(f) => {
-                            f.body.as_ref().map(|b| analyze_data_flow(&b.statements, &f.params, &source))
-                        }
+                        FunctionNode::Function(f) => f
+                            .body
+                            .as_ref()
+                            .map(|b| analyze_data_flow(&b.statements, &f.params, &source)),
                         FunctionNode::Arrow(a) => {
                             Some(analyze_data_flow(&a.body.statements, &a.params, &source))
                         }
@@ -221,11 +234,7 @@ fn main() {
 
         let stmts = get_statements(&func.node);
 
-        let metrics = if cli.metrics || stmts.is_some() {
-            compute_metrics(stmts.unwrap_or(&[]))
-        } else {
-            FunctionMetrics::default()
-        };
+        let metrics = stmts.map(compute_metrics).unwrap_or_default();
 
         let predicates = if include_predicates {
             stmts.map(|s| {
@@ -269,8 +278,7 @@ fn main() {
                     } else if !init_effs.is_empty() {
                         // Explicit constructor: insert init_effs after super() call
                         let super_pos = body_effs.iter().position(|e| {
-                            e.kind == EffectKind::Call
-                                && e.text.trim_start().starts_with("super(")
+                            e.kind == EffectKind::Call && e.text.trim_start().starts_with("super(")
                         });
                         let insert_at = super_pos.map(|p| p + 1).unwrap_or(0);
                         let mut combined = body_effs[..insert_at].to_vec();
@@ -312,11 +320,10 @@ fn main() {
 
         let data_flow = if include_data_flow {
             match &func.node {
-                FunctionNode::Function(f) => {
-                    f.body.as_ref().map(|b| {
-                        analyze_data_flow(&b.statements, &f.params, &source)
-                    })
-                }
+                FunctionNode::Function(f) => f
+                    .body
+                    .as_ref()
+                    .map(|b| analyze_data_flow(&b.statements, &f.params, &source)),
                 FunctionNode::Arrow(a) => {
                     Some(analyze_data_flow(&a.body.statements, &a.params, &source))
                 }
@@ -366,16 +373,23 @@ fn main() {
             if include_graph {
                 let mut builder = ir::builder::GraphBuilder::new();
                 let symbol_map = ir::from_functions::functions_to_graph(&collected, &mut builder);
-                let cg = build_call_graph(&collected, &ret.program, &source, cli.include_builtin_calls);
+                let cg =
+                    build_call_graph(&collected, &ret.program, &source, cli.include_builtin_calls);
                 ir::from_callgraph::callgraph_to_graph(&cg, &symbol_map, &mut builder);
 
                 // Decision tables (gated by --decision / --all)
                 if include_decision {
                     for func in &collected {
-                        if matches!(func.node, FunctionNode::Class(_)) { continue; }
+                        if matches!(func.node, FunctionNode::Class(_)) {
+                            continue;
+                        }
                         if let Some(dt) = build_decision_table(
-                            &func.node, &func.symbol_name, &func.symbol_kind.to_string(),
-                            &source, &config.decision_table, cli.decision_enhanced,
+                            &func.node,
+                            &func.symbol_name,
+                            &func.symbol_kind.to_string(),
+                            &source,
+                            &config.decision_table,
+                            cli.decision_enhanced,
                             #[cfg(feature = "cfg-analysis")]
                             cfg_ctx.as_ref().filter(|_| cli.decision_enhanced),
                         ) {
@@ -391,9 +405,16 @@ fn main() {
                 {
                     if let Some(ref ctx) = cfg_ctx {
                         for func in &collected {
-                            if matches!(func.node, FunctionNode::Class(_)) { continue; }
+                            if matches!(func.node, FunctionNode::Class(_)) {
+                                continue;
+                            }
                             if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
-                                ir::from_cfg::cfg_to_graph(ctx, &func.node, parent_id, &mut builder);
+                                ir::from_cfg::cfg_to_graph(
+                                    ctx,
+                                    &func.node,
+                                    parent_id,
+                                    &mut builder,
+                                );
                             }
                         }
                     }
@@ -402,19 +423,26 @@ fn main() {
                 // Data-flow → Graph IR
                 if include_data_flow {
                     for func in &collected {
-                        if matches!(func.node, FunctionNode::Class(_)) { continue; }
+                        if matches!(func.node, FunctionNode::Class(_)) {
+                            continue;
+                        }
                         if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
                             let df_report = match &func.node {
-                                FunctionNode::Function(f) => {
-                                    f.body.as_ref().map(|b| analyze_data_flow(&b.statements, &f.params, &source))
-                                }
+                                FunctionNode::Function(f) => f
+                                    .body
+                                    .as_ref()
+                                    .map(|b| analyze_data_flow(&b.statements, &f.params, &source)),
                                 FunctionNode::Arrow(a) => {
                                     Some(analyze_data_flow(&a.body.statements, &a.params, &source))
                                 }
                                 _ => None,
                             };
                             if let Some(report) = df_report {
-                                ir::from_data_flow::data_flow_to_graph(&report, parent_id, &mut builder);
+                                ir::from_data_flow::data_flow_to_graph(
+                                    &report,
+                                    parent_id,
+                                    &mut builder,
+                                );
                             }
                         }
                     }
