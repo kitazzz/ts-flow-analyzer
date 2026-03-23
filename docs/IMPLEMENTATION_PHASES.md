@@ -1,14 +1,14 @@
-# recast-forge-analyzer 実装フェーズ解説
+# ts-flow-analyzer 実装フェーズ解説
 
 このドキュメントは「設計思想」ではなく、「実際のコードがどの順番で何をしているか」を追うための実装ウォークスルーです。
 
 読む順番の基本は次です。
 
-1. [`src/main.rs`](../src/main.rs)
-2. [`src/ast/collect_functions.rs`](../src/ast/collect_functions.rs)
+1. [`src/main.rs`](../analyzer/src/main.rs)
+2. [`src/ast/collect_functions.rs`](../analyzer/src/ast/collect_functions.rs)
 3. 各解析フェーズの入口関数
-4. [`src/callgraph/mod.rs`](../src/callgraph/mod.rs)
-5. [`src/ir/`](../src/ir)
+4. [`src/callgraph/mod.rs`](../analyzer/src/callgraph/mod.rs)
+5. [`src/ir/`](../analyzer/src/ir)
 
 ---
 
@@ -33,7 +33,7 @@ CLI parse
   -> JSON / text / DOT output
 ```
 
-オーケストレーションはほぼすべて [`src/main.rs`](../src/main.rs) にあります。各解析器は `main.rs` から呼ばれる独立モジュールです。
+オーケストレーションはほぼすべて [`src/main.rs`](../analyzer/src/main.rs) にあります。各解析器は `main.rs` から呼ばれる独立モジュールです。
 
 ---
 
@@ -41,10 +41,10 @@ CLI parse
 
 ### 入口
 
-- [`src/main.rs`](../src/main.rs)
-- [`src/cli/mod.rs`](../src/cli/mod.rs)
-- [`src/config/mod.rs`](../src/config/mod.rs)
-- [`src/parser/load_source.rs`](../src/parser/load_source.rs)
+- [`src/main.rs`](../analyzer/src/main.rs)
+- [`src/cli/mod.rs`](../analyzer/src/cli/mod.rs)
+- [`src/config/mod.rs`](../analyzer/src/config/mod.rs)
+- [`src/parser/load_source.rs`](../analyzer/src/parser/load_source.rs)
 
 ### 何をしているか
 
@@ -57,7 +57,7 @@ CLI parse
 
 ### ここで決まる制御フラグ
 
-[`src/main.rs`](../src/main.rs) の冒頭で、次の bool が決まります。
+[`src/main.rs`](../analyzer/src/main.rs) の冒頭で、次の bool が決まります。
 
 - `include_predicates`
 - `include_effects`
@@ -84,7 +84,7 @@ CFG 系だけは `cfg-analysis` feature が必要です。
 
 ### 入口
 
-- `collect_functions()` in [`src/ast/collect_functions.rs`](../src/ast/collect_functions.rs)
+- `collect_functions()` in [`src/ast/collect_functions.rs`](../analyzer/src/ast/collect_functions.rs)
 
 ### 出力
 
@@ -92,7 +92,7 @@ CFG 系だけは `cfg-analysis` feature が必要です。
 
 ### 中核データ
 
-[`src/ast/collect_functions.rs`](../src/ast/collect_functions.rs) では、まず AST から解析単位を切り出します。
+[`src/ast/collect_functions.rs`](../analyzer/src/ast/collect_functions.rs) では、まず AST から解析単位を切り出します。
 
 - `FunctionNode`
   - `Function`
@@ -151,7 +151,7 @@ class 自体も `CollectedFunction` として 1 件作られますが、同時�
 
 ### 入口
 
-- [`src/main.rs`](../src/main.rs) の `for func in &collected`
+- [`src/main.rs`](../analyzer/src/main.rs) の `for func in &collected`
 
 ここが関数ごとの解析をまとめて回す中心です。
 
@@ -172,7 +172,7 @@ for CollectedFunction in collected
 
 ### `FunctionReport` の役割
 
-[`src/model/mod.rs`](../src/model/mod.rs) の `FunctionReport` は、関数単位の統合 DTO です。
+[`src/model/mod.rs`](../analyzer/src/model/mod.rs) の `FunctionReport` は、関数単位の統合 DTO です。
 
 - 常に入る: symbol 情報、`metrics`
 - フラグ依存: `predicates`, `effects`, `decision_table`, `data_flow`
@@ -183,14 +183,14 @@ for CollectedFunction in collected
 
 ### 入口
 
-- `compute_metrics()` in [`src/main.rs`](../src/main.rs)
+- `compute_metrics()` in [`src/main.rs`](../analyzer/src/main.rs)
 
 ### 呼ばれる関数
 
-- `analyze_basic_complexity()` in [`src/metrics/complexity.rs`](../src/metrics/complexity.rs)
-- `analyze_max_nesting_depth()` in [`src/metrics/nesting.rs`](../src/metrics/nesting.rs)
-- `analyze_cyclomatic_complexity()` in [`src/metrics/cyclomatic.rs`](../src/metrics/cyclomatic.rs)
-- `analyze_function_nesting()` in [`src/metrics/function_nesting.rs`](../src/metrics/function_nesting.rs)
+- `analyze_basic_complexity()` in [`src/metrics/complexity.rs`](../analyzer/src/metrics/complexity.rs)
+- `analyze_max_nesting_depth()` in [`src/metrics/nesting.rs`](../analyzer/src/metrics/nesting.rs)
+- `analyze_cyclomatic_complexity()` in [`src/metrics/cyclomatic.rs`](../analyzer/src/metrics/cyclomatic.rs)
+- `analyze_function_nesting()` in [`src/metrics/function_nesting.rs`](../analyzer/src/metrics/function_nesting.rs)
 
 ### 実装の考え方
 
@@ -226,8 +226,8 @@ metrics は 1 つの巨大 walker ではなく、関心ごとごとに分けて�
 
 ### 入口
 
-- `extract_predicates()` in [`src/predicates/extract.rs`](../src/predicates/extract.rs)
-- `normalize_predicates()` in [`src/predicates/normalize.rs`](../src/predicates/normalize.rs)
+- `extract_predicates()` in [`src/predicates/extract.rs`](../analyzer/src/predicates/extract.rs)
+- `normalize_predicates()` in [`src/predicates/normalize.rs`](../analyzer/src/predicates/normalize.rs)
 
 ### 2 段階構成
 
@@ -272,7 +272,7 @@ metrics は 1 つの巨大 walker ではなく、関心ごとごとに分けて�
 
 ### 入口
 
-- `extract_effects()` in [`src/effects/extract.rs`](../src/effects/extract.rs)
+- `extract_effects()` in [`src/effects/extract.rs`](../analyzer/src/effects/extract.rs)
 
 ### 出力
 
@@ -324,7 +324,7 @@ call の副作用クラスは AST 型ではなくキーワード分類で決め�
 
 ### 入口
 
-- `build_decision_table()` in [`src/decision/table.rs`](../src/decision/table.rs)
+- `build_decision_table()` in [`src/decision/table.rs`](../analyzer/src/decision/table.rs)
 
 ### 出力
 
@@ -375,7 +375,7 @@ call の副作用クラスは AST 型ではなくキーワード分類で決め�
 
 ### 入口
 
-- `analyze_data_flow()` in [`src/dataflow/analyze.rs`](../src/dataflow/analyze.rs)
+- `analyze_data_flow()` in [`src/dataflow/analyze.rs`](../analyzer/src/dataflow/analyze.rs)
 
 ### 出力
 
@@ -468,7 +468,7 @@ loop body をそのまま複数回 walk すると `Use` や `Edge` が重複し�
 
 ### 入口
 
-- `build_call_graph()` in [`src/callgraph/mod.rs`](../src/callgraph/mod.rs)
+- `build_call_graph()` in [`src/callgraph/mod.rs`](../analyzer/src/callgraph/mod.rs)
 
 ### 出力
 
@@ -518,8 +518,8 @@ loop body をそのまま複数回 walk すると `Use` や `Edge` が重複し�
 
 ### 入口
 
-- [`src/ir/builder.rs`](../src/ir/builder.rs)
-- [`src/ir/graph.rs`](../src/ir/graph.rs)
+- [`src/ir/builder.rs`](../analyzer/src/ir/builder.rs)
+- [`src/ir/graph.rs`](../analyzer/src/ir/graph.rs)
 
 ### 生成順
 
@@ -616,17 +616,17 @@ JSON でない場合は `FunctionReport` を text で順に出します。
 
 最短で全体を掴むなら次の順が読みやすいです。
 
-1. [`src/main.rs`](../src/main.rs)
-2. [`src/model/mod.rs`](../src/model/mod.rs)
-3. [`src/ast/collect_functions.rs`](../src/ast/collect_functions.rs)
-4. [`src/metrics/`](../src/metrics)
-5. [`src/predicates/extract.rs`](../src/predicates/extract.rs)
-6. [`src/predicates/normalize.rs`](../src/predicates/normalize.rs)
-7. [`src/effects/extract.rs`](../src/effects/extract.rs)
-8. [`src/decision/table.rs`](../src/decision/table.rs)
-9. [`src/dataflow/analyze.rs`](../src/dataflow/analyze.rs)
-10. [`src/callgraph/mod.rs`](../src/callgraph/mod.rs)
-11. [`src/ir/`](../src/ir)
+1. [`src/main.rs`](../analyzer/src/main.rs)
+2. [`src/model/mod.rs`](../analyzer/src/model/mod.rs)
+3. [`src/ast/collect_functions.rs`](../analyzer/src/ast/collect_functions.rs)
+4. [`src/metrics/`](../analyzer/src/metrics)
+5. [`src/predicates/extract.rs`](../analyzer/src/predicates/extract.rs)
+6. [`src/predicates/normalize.rs`](../analyzer/src/predicates/normalize.rs)
+7. [`src/effects/extract.rs`](../analyzer/src/effects/extract.rs)
+8. [`src/decision/table.rs`](../analyzer/src/decision/table.rs)
+9. [`src/dataflow/analyze.rs`](../analyzer/src/dataflow/analyze.rs)
+10. [`src/callgraph/mod.rs`](../analyzer/src/callgraph/mod.rs)
+11. [`src/ir/`](../analyzer/src/ir)
 
 特に変更影響を追うときは、まず `main.rs` で「その解析がどの出力パスから呼ばれるか」を確認すると早いです。
 
@@ -638,8 +638,8 @@ JSON でない場合は `FunctionReport` を text で順に出します。
 
 見る場所:
 
-- [`src/main.rs`](../src/main.rs)
-- [`src/model/mod.rs`](../src/model/mod.rs)
+- [`src/main.rs`](../analyzer/src/main.rs)
+- [`src/model/mod.rs`](../analyzer/src/model/mod.rs)
 - 新規 `src/<feature>/`
 
 やること:
@@ -653,26 +653,26 @@ JSON でない場合は `FunctionReport` を text で順に出します。
 
 見る場所:
 
-- [`src/ir/graph.rs`](../src/ir/graph.rs)
-- [`src/ir/dot.rs`](../src/ir/dot.rs)
+- [`src/ir/graph.rs`](../analyzer/src/ir/graph.rs)
+- [`src/ir/dot.rs`](../analyzer/src/ir/dot.rs)
 - `src/ir/from_*.rs`
 
 ### call 解決ルールを変えたい
 
 見る場所:
 
-- [`src/callgraph/collect_calls.rs`](../src/callgraph/collect_calls.rs)
-- [`src/callgraph/resolve.rs`](../src/callgraph/resolve.rs)
-- [`src/callgraph/classify.rs`](../src/callgraph/classify.rs)
-- [`src/callgraph/mod.rs`](../src/callgraph/mod.rs)
+- [`src/callgraph/collect_calls.rs`](../analyzer/src/callgraph/collect_calls.rs)
+- [`src/callgraph/resolve.rs`](../analyzer/src/callgraph/resolve.rs)
+- [`src/callgraph/classify.rs`](../analyzer/src/callgraph/classify.rs)
+- [`src/callgraph/mod.rs`](../analyzer/src/callgraph/mod.rs)
 
 ### def-use を拡張したい
 
 見る場所:
 
-- [`src/dataflow/model.rs`](../src/dataflow/model.rs)
-- [`src/dataflow/analyze.rs`](../src/dataflow/analyze.rs)
-- [`src/ir/from_data_flow.rs`](../src/ir/from_data_flow.rs)
+- [`src/dataflow/model.rs`](../analyzer/src/dataflow/model.rs)
+- [`src/dataflow/analyze.rs`](../analyzer/src/dataflow/analyze.rs)
+- [`src/ir/from_data_flow.rs`](../analyzer/src/ir/from_data_flow.rs)
 
 ---
 

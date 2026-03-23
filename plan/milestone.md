@@ -1,17 +1,17 @@
-# Roadmap: TypeScript Complexity / Rule Extraction Analyzer
+# Roadmap: ts-flow-analyzer
 
 ## Overview
 
 TypeScript コードベースに対して静的解析を行い、関数ごとの複雑さ、条件分岐の構造、ルールエンジン化候補、さらに将来的な真理値表 / MC/DC / プロパティテスト生成までつなげる analyzer を構築する。
 
-現在の主実装は Rust / Oxc ベースの `rust-analyzer/` にあり、`ts-morph` 側は初期探索・仕様固めの履歴として扱う。
+現在の主実装は Rust / Oxc ベースの `analyzer/` です。旧 `ts-morph` 実装は削除し、主系を Rust 側に一本化しています。
 
 ---
 
 ## Current Strategy
 
-- 現在の主実装は Rust / Oxc ベースの `rust-analyzer/` にある
-- `ts-morph` 側は初期探索・仕様固めの履歴として残し、必要な試作に限定して使う
+- 現在の主実装は Rust / Oxc ベースの `analyzer/` にある
+- 解析基盤は Rust / Oxc に集中し、実験コードも原則こちらに寄せる
 - 単なる complexity analyzer ではなく、最終的には
   - rule candidate detection
   - logic extraction
@@ -202,6 +202,61 @@ LLM が解釈しやすい形に解析結果を整え、fact / decision / action 
 
 ---
 
+## Implementation Track: ICFG / SDG / CPG
+
+### Goal
+現在の single-file analyzer を、program graph 系の基盤へ段階的に拡張する。
+
+対象は一足飛びの full CPG ではなく、次の順で積み上げること。
+
+1. ICFG（interprocedural control-flow graph）
+2. SDG-lite（ICFG + intraprocedural control/data dependence）
+3. interface node を伴う interprocedural data dependence
+4. sparse syntax layer を含む CPG view
+
+### Dependency
+- issue #7: Graph IR の outcome node / terminal edge を先に入れる
+
+### Scope
+- single-file only
+- resolved internal call のみ ICFG / SDG 接続
+- `thisMethod` / `super` / `new` は既存 call graph 解決を再利用
+- `await` は通常 call と同じ扱い
+
+### Non-goals in This Track
+- project-wide / precise interprocedural analysis
+- SSA 変換
+- alias / points-to / heap modeling
+- import 越しの正確な dispatch
+
+### Phase G1: ICFG foundation
+- explicit `FunctionEntry` / `FunctionExit` / `Outcome` ノードを導入
+- CFG と call graph をつなぐ内部 `IcfgReport` モデルを追加
+- caller block -> callee entry、callee exit -> caller successor block の conservative 接続を行う
+- `--icfg` / `--icfg-dot` を追加する
+
+### Phase G2: SDG-lite
+- intraprocedural `ControlDep` を導入
+- 既存 `DataDep` と組み合わせて function-local dependence layer を作る
+- `--sdg` / `--sdg-dot` で export する
+
+### Phase G3: Interprocedural data dependence
+- `FormalIn` / `FormalOut` / `ActualIn` / `ActualOut` interface node を導入
+- parameter / return のみを対象に summary edge を作る
+- `this.field` や heap mutation は後続に分離する
+
+### Phase G4: CPG projection
+- sparse syntax layer を追加する
+- AST / CFG / ICFG / call / control-dep / data-dep を 1 つの Graph view として束ねる
+- `--cpg` export を追加する
+
+### Exit Criteria
+- 同一ファイル内の caller -> callee -> return path を ICFG として辿れる
+- decision / outcome / effect / data-flow を SDG 上で関連付けられる
+- syntax + control + data + call を CPG view として 1 つの export に載せられる
+
+---
+
 ## Design Principles
 
 ### 1. 判定と副作用を分ける
@@ -223,15 +278,7 @@ LLM が解釈しやすい形に解析結果を整え、fact / decision / action 
 ### 3. 関数全体を論理化しない
 関数全体を真理値表化するのではなく、**decision / predicate / effect** に分解して扱う。
 
-### 4. `ts-morph` は初期探索の履歴
-`ts-morph` 実装は、次を固めるための初期探索として残す。
-- 欲しい出力
-- 効くメトリクス
-- 抽出すべき構造
-
-主系の analyzer 開発は `rust-analyzer/` 側で進める。
-
-### 5. Rust / Oxc を主系として伸ばす
+### 4. Rust / Oxc を主系として伸ばす
 現在の優先は Rust / Oxc 実装を前提に次を積み上げること。
 - intraprocedural CFG の強化
 - local def-use / data-flow の活用
@@ -243,20 +290,19 @@ LLM が解釈しやすい形に解析結果を整え、fact / decision / action 
 
 ## Near-term Priority
 
-1. Milestone 1 を安定化
-2. Milestone 2 で条件式と効果を抽出
-3. Milestone 3 で rule candidate を見つける
-4. Milestone 4 で truth table / MC/DC / property test
-5. Milestone 5 で LLM handoff
+1. issue #7 で outcome node / terminal edge を入れる
+2. G1 で single-file ICFG を入れる
+3. G2 で SDG-lite を入れる
+4. G3 で parameter / return summary edge を入れる
+5. G4 で sparse CPG view を入れる
 
 ---
 
 ## Non-goals for Now
 
 現時点では以下はやらない:
-- 完全な interprocedural analysis
-- 本格的な CFG / dataflow engine
-- Rust 実装
+- project-wide / precise interprocedural analysis
+- SSA / alias / heap modeling
 - framework magic の完全解決
 - 全関数の完全自動 rule engine 変換
 

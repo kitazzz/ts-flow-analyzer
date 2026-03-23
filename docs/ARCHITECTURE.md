@@ -1,10 +1,10 @@
-# recast-forge-analyzer 設計書
+# ts-flow-analyzer 設計書
 
 ## 1. プロジェクト概要
 
-`recast-forge-analyzer`（バイナリ名: `rf-analyze`）は、TypeScript / JavaScript ソースコードを対象にした Rust 製の静的解析 CLI です。
+`ts-flow-analyzer`（バイナリ名: `ts-flow-analyzer`）は、TypeScript / JavaScript ソースコードを対象にした Rust 製の静的解析 CLI です。
 
-実装を読む順番とフェーズ別のコード導線は [`IMPLEMENTATION_PHASES.md`](IMPLEMENTATION_PHASES.md) を参照してください。
+実装を読む順番とフェーズ別のコード導線は [`IMPLEMENTATION_PHASES.md`](IMPLEMENTATION_PHASES.md) を参照してください。ICFG / SDG / CPG の次段計画は [`ICFG_SDG_CPG_PLAN.md`](ICFG_SDG_CPG_PLAN.md) にまとめています。
 
 **目的**: 関数・メソッド単位で「何を判断し、何をするか」を構造的に抽出する。
 テストケース設計、コードレビュー、LLM 連携のための中間表現（IR）生成を視野に入れた解析基盤です。
@@ -178,7 +178,7 @@ FunctionReport
 ├── class_name: Some("ApproveOrderUseCase")
 ├── member_name: Some("execute")
 ├── function_name: "execute"
-├── file_path: "../samples/usecase/approveOrder.ts"
+├── file_path: "samples/usecase/approveOrder.ts"
 ├── start_line: 26
 ├── metrics: FunctionMetrics { ... }
 ├── predicates: Option<Vec<AtomicPredicate>>    ← --predicates / --all
@@ -669,7 +669,11 @@ Oxc 0.121 は AST 型として以下を使用:
 | O7+ | Predicate 正規化改善、条件分解強化、call graph 分類 | 完了 |
 | O8 | Graph IR foundation (`--graph`, `--graph-dot`) | 完了 |
 | O8.5 | Local def-use / data-flow foundation | 完了 |
-| O9 | LLM 向け IR / decision DAG 拡張 | 未着手 |
+| O9 | Outcome node / terminal edge enrichment | issue #7 |
+| O10 | Single-file ICFG foundation | 計画済み |
+| O11 | SDG-lite（control-dep + local data-dep + ICFG） | 計画済み |
+| O12 | CPG projection（sparse syntax layer 含む） | 計画済み |
+| O13 | LLM 向け IR / decision DAG 拡張 | 未着手 |
 
 ### 今後の拡張候補
 
@@ -678,7 +682,7 @@ Oxc 0.121 は AST 型として以下を使用:
 - `oxc_semantic` ベースのバインディング解決
 - コールバック / 高階関数の追跡
 - Graph IR 上での complete decision DAG（outcome node / terminal edge）
-- Graph IR 上での interprocedural data-dep / SDG・CPG 拡張
+- Graph IR 上での single-file ICFG / SDG / CPG 拡張
 - Outcome label の安定化（エラーメッセージからの自動命名）
 - Effects と guard path の紐付け（path-aware effects）
 - CFG ベースの strict MC/DC

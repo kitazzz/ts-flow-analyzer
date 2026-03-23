@@ -630,23 +630,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "recast-forge-analyzer"
-version = "0.1.0"
-dependencies = [
- "clap",
- "oxc_allocator",
- "oxc_ast",
- "oxc_cfg",
- "oxc_parser",
- "oxc_semantic",
- "oxc_span",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
-]
-
-[[package]]
 name = "regex"
 version = "1.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -825,6 +808,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "ts-flow-analyzer"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "oxc_allocator",
+ "oxc_ast",
+ "oxc_cfg",
+ "oxc_parser",
+ "oxc_semantic",
+ "oxc_span",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]

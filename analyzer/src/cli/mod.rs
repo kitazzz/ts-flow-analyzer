@@ -1,7 +1,7 @@
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(name = "rf-analyze", about = "Recast Forge static analyzer")]
+#[command(name = "ts-flow-analyzer", about = "TypeScript flow analyzer")]
 pub struct Cli {
     /// Input file to analyze
     pub file: String,

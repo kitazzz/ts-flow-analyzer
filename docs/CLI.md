@@ -1,6 +1,6 @@
-# recast-forge-analyzer
+# ts-flow-analyzer
 
-`recast-forge-analyzer` は、TypeScript ソースを対象に関数・メソッド・クラス単位の静的解析を行う Rust 製 CLI です。
+`ts-flow-analyzer` は、TypeScript ソースを対象に関数・メソッド・クラス単位の静的解析を行う Rust 製 CLI です。
 
 - 基本メトリクスの集計
 - predicate 抽出
@@ -12,10 +12,12 @@
 
 関連ドキュメント:
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- [`docs/IMPLEMENTATION_PHASES.md`](docs/IMPLEMENTATION_PHASES.md)
+- [`REPOSITORY_LAYOUT.md`](REPOSITORY_LAYOUT.md)
+- [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- [`IMPLEMENTATION_PHASES.md`](IMPLEMENTATION_PHASES.md)
+- [`ICFG_SDG_CPG_PLAN.md`](ICFG_SDG_CPG_PLAN.md)
 
-バイナリ名は `rf-analyze` です。
+バイナリ名は `ts-flow-analyzer` です。
 
 ## インストール
 
@@ -30,7 +32,7 @@
 rustc --version
 ```
 
-このディレクトリには [`rust-toolchain.toml`](rust-toolchain.toml) を置いてあり、`rustup` 管理の環境なら 1.92.0 を使う前提です。
+ツールチェイン固定には [`analyzer/rust-toolchain.toml`](../analyzer/rust-toolchain.toml) を使っています。`rustup` 管理の環境なら 1.92.0 を使う前提です。
 
 `rustup` を使っている場合:
 
@@ -39,18 +41,17 @@ rustup toolchain install 1.92.0
 rustup override set 1.92.0
 ```
 
-推奨は `cargo install --path .` です。これで release ビルド済みの `rf-analyze` がインストールされます。
+推奨は `cargo install --path analyzer` です。これで release ビルド済みの `ts-flow-analyzer` がインストールされます。
 
 ```sh
-cd rust-analyzer
-cargo install --path .
+cargo install --path analyzer
 ```
 
-通常は `~/.cargo/bin/rf-analyze` に入ります。
+通常は `~/.cargo/bin/ts-flow-analyzer` に入ります。
 
 ### PATH を通す
 
-`rf-analyze` をどこからでも呼びたい場合は、`~/.cargo/bin` を PATH に入れます。
+`ts-flow-analyzer` をどこからでも呼びたい場合は、`~/.cargo/bin` を PATH に入れます。
 
 `zsh`:
 
@@ -62,22 +63,20 @@ source ~/.zshrc
 確認:
 
 ```sh
-which rf-analyze
-rf-analyze --help
+which ts-flow-analyzer
+ts-flow-analyzer --help
 ```
 
 更新時は再インストールします。
 
 ```sh
-cd rust-analyzer
-cargo install --path . --force
+cargo install --path analyzer --force
 ```
 
 CFG 拡張を使う場合は feature 付きでインストールします。
 
 ```sh
-cd rust-analyzer
-cargo install --path . --features cfg-analysis --force
+cargo install --path analyzer --features cfg-analysis --force
 ```
 
 コマンドは 1 行で実行してください。途中で改行すると `-force` のように解釈されて失敗します。
@@ -87,20 +86,19 @@ cargo install --path . --features cfg-analysis --force
 最小実行:
 
 ```sh
-rf-analyze /absolute/path/to/file.ts
+ts-flow-analyzer /absolute/path/to/file.ts
 ```
 
 JSON で詳細出力:
 
 ```sh
-rf-analyze /absolute/path/to/file.ts --all --json
+ts-flow-analyzer /absolute/path/to/file.ts --all --json
 ```
 
 このリポジトリのサンプルを解析する場合:
 
 ```sh
-cd rust-analyzer
-rf-analyze ../samples/usecase/approveOrder.ts --all --json
+ts-flow-analyzer samples/usecase/approveOrder.ts --all --json
 ```
 
 ## 使い方
@@ -108,13 +106,13 @@ rf-analyze ../samples/usecase/approveOrder.ts --all --json
 ヘルプ:
 
 ```sh
-rf-analyze --help
+ts-flow-analyzer --help
 ```
 
 CLI 仕様:
 
 ```sh
-rf-analyze [OPTIONS] <FILE>
+ts-flow-analyzer [OPTIONS] <FILE>
 ```
 
 `<FILE>` は解析対象のソースファイルです。実装上はファイル拡張子から `SourceType` を判定しています。現状のサンプルと主用途は `.ts` です。
@@ -153,98 +151,98 @@ rf-analyze [OPTIONS] <FILE>
 基本メトリクスを見る:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts
+ts-flow-analyzer samples/usecase/approveOrder.ts
 ```
 
 `ApproveOrderUseCase#execute` だけを見る:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --function 'ApproveOrderUseCase#execute'
+ts-flow-analyzer samples/usecase/approveOrder.ts --function 'ApproveOrderUseCase#execute'
 ```
 
 predicate と effect を JSON で見る:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --predicates --effects --json
+ts-flow-analyzer samples/usecase/approveOrder.ts --predicates --effects --json
 ```
 
 data flow を JSON で見る:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --data-flow --json
+ts-flow-analyzer samples/usecase/approveOrder.ts --data-flow --json
 ```
 
 decision table まで含めて出す:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --all --json
+ts-flow-analyzer samples/usecase/approveOrder.ts --all --json
 ```
 
 CFG 拡張付き decision table を JSON で出す:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --decision --decision-enhanced --json
+ts-flow-analyzer samples/usecase/approveOrder.ts --decision --decision-enhanced --json
 ```
 
 config を明示して decision table を出す:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --decision --json --config ./config.yaml
+ts-flow-analyzer samples/usecase/approveOrder.ts --decision --json --config analyzer/config.yaml.example
 ```
 
 call graph を JSON で見る:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --call-graph --json
+ts-flow-analyzer samples/usecase/approveOrder.ts --call-graph --json
 ```
 
 Graph IR を JSON で見る:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --graph
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph
 ```
 
 Graph IR と decision point をまとめて JSON で見る:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --graph --decision
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph --decision
 ```
 
 Graph IR に data flow も含めて見る:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --graph --data-flow
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph --data-flow
 ```
 
 call graph を DOT で出す（execute からの到達可能グラフ）:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute'
+ts-flow-analyzer samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute'
 ```
 
 特定メソッドの CFG を DOT で出す:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute'
+ts-flow-analyzer samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute'
 ```
 
 DOT をファイルに保存する:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute' > execute.dot
+ts-flow-analyzer samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute' > execute.dot
 ```
 
 Graph IR を DOT で出す:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
 ```
 
 別サンプルを解析する:
 
 ```sh
-rf-analyze ../samples/domain/order.ts
-rf-analyze ../samples/utils/validation.ts --all --json
+ts-flow-analyzer samples/domain/order.ts
+ts-flow-analyzer samples/utils/validation.ts --all --json
 ```
 
 ## 何が出るか
@@ -389,7 +387,7 @@ decision_table:
 - `failure_when_false`: `return { ok: false }` のように、`false` なら失敗とみなすキー
 - `failure_when_present`: `return { error: '...' }` のように、キーが存在したら失敗とみなすキー
 
-未指定時は上のデフォルトが使われます。サンプルは [`config.yaml.example`](config.yaml.example) にあります。
+未指定時は上のデフォルトが使われます。サンプルは [`analyzer/config.yaml.example`](../analyzer/config.yaml.example) にあります。
 
 この出力は厳密な形式検証としての strict MC/DC ではなく、現状は branch-sensitive な近似出力です。
 
@@ -464,7 +462,7 @@ decision_table:
 例:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --graph --decision
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph --decision
 ```
 
 ### call graph DOT
@@ -472,7 +470,7 @@ rf-analyze ../samples/usecase/approveOrder.ts --graph --decision
 `--call-graph-dot <FUNCTION>` は、指定エントリポイントから到達可能な呼び出しグラフを DOT で出力して終了します。
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute'
+ts-flow-analyzer samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute'
 ```
 
 ノードの色分け:
@@ -484,7 +482,7 @@ rf-analyze ../samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseC
 SVG 化:
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute' > callgraph.dot
+ts-flow-analyzer samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute' > callgraph.dot
 dot -Tsvg callgraph.dot -o callgraph.svg
 ```
 
@@ -499,9 +497,9 @@ dot -Tsvg callgraph.dot -o callgraph.svg
 `--decision` を付けると decision point と `decisionBranch` も含まれます。`--data-flow` を付けると `dataFlowDef` / `dataFlowUse` と橙色の `dataDep` edge も含まれます。`cfg-analysis` 付きビルドなら `cfgBlock` も含まれます。
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
-rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --decision
-rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --data-flow
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --decision
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --data-flow
 ```
 
 ### CFG / DOT
@@ -509,19 +507,19 @@ rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#e
 `--cfg-dot <FUNCTION>` は、指定した function / method の CFG 部分グラフを DOT 形式で stdout に出して終了します。
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#checkRisk'
+ts-flow-analyzer samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#checkRisk'
 ```
 
 Graphviz が入っていれば SVG 化できます。
 
 ```sh
-rf-analyze ../samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute' > execute.dot
+ts-flow-analyzer samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute' > execute.dot
 dot -Tsvg execute.dot -o execute.svg
 ```
 
 ## 出力イメージ
 
-`rf-analyze ../samples/usecase/approveOrder.ts --function 'ApproveOrderUseCase#execute' --graph --decision --json`
+`ts-flow-analyzer samples/usecase/approveOrder.ts --function 'ApproveOrderUseCase#execute' --graph --decision --json`
 
 ```json
 {
@@ -532,12 +530,12 @@ dot -Tsvg execute.dot -o execute.svg
       "className": "ApproveOrderUseCase",
       "memberName": "execute",
       "functionName": "execute",
-      "filePath": "../samples/usecase/approveOrder.ts",
+      "filePath": "samples/usecase/approveOrder.ts",
       "startLine": 26
     }
   ],
   "graph": {
-    "filePath": "../samples/usecase/approveOrder.ts",
+    "filePath": "samples/usecase/approveOrder.ts",
     "nodes": [
       {
         "id": 2,
@@ -572,8 +570,8 @@ dot -Tsvg execute.dot -o execute.svg
 
 ## 開発メモ
 
-- 日常利用は `cargo install --path .` で入れた `rf-analyze` を使う前提です
-- 開発中に未インストールの状態で試すなら `cargo run -- ...` でも実行できます
+- 日常利用は `cargo install --path analyzer` で入れた `ts-flow-analyzer` を使う前提です
+- 開発中に未インストールの状態で試すなら `cargo run --manifest-path analyzer/Cargo.toml -- ...` でも実行できます
 - class 自体もレポート対象ですが、class ノードには statement body がないため、class の metrics は最小値寄りになります
 - サンプルはリポジトリルートの `samples/` にあります
 
@@ -581,53 +579,53 @@ dot -Tsvg execute.dot -o execute.svg
 
 ```sh
 # インストール
-cargo install --path .
+cargo install --path analyzer
 
 # 更新
-cargo install --path . --force
+cargo install --path analyzer --force
 
 # CFG 拡張付きで更新
-cargo install --path . --features cfg-analysis --force
+cargo install --path analyzer --features cfg-analysis --force
 
 # ヘルプ
-rf-analyze --help
+ts-flow-analyzer --help
 
 # 解析
-rf-analyze ../samples/usecase/placeOrder.ts
+ts-flow-analyzer samples/usecase/placeOrder.ts
 
 # JSON 出力
-rf-analyze ../samples/usecase/placeOrder.ts --json
+ts-flow-analyzer samples/usecase/placeOrder.ts --json
 
 # 詳細全部
-rf-analyze ../samples/usecase/placeOrder.ts --all --json
+ts-flow-analyzer samples/usecase/placeOrder.ts --all --json
 
 # data-flow のみ JSON
-rf-analyze ../samples/usecase/placeOrder.ts --data-flow --json
+ts-flow-analyzer samples/usecase/placeOrder.ts --data-flow --json
 
 # CFG 拡張付き decision table
-rf-analyze ../samples/usecase/approveOrder.ts --decision --decision-enhanced --json
+ts-flow-analyzer samples/usecase/approveOrder.ts --decision --decision-enhanced --json
 
 # call graph 付き JSON
-rf-analyze ../samples/usecase/approveOrder.ts --call-graph --json
+ts-flow-analyzer samples/usecase/approveOrder.ts --call-graph --json
 
 # Graph IR
-rf-analyze ../samples/usecase/approveOrder.ts --graph
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph
 
 # Graph IR + decision points
-rf-analyze ../samples/usecase/approveOrder.ts --graph --decision
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph --decision
 
 # Graph IR + data-flow
-rf-analyze ../samples/usecase/approveOrder.ts --graph --data-flow
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph --data-flow
 
 # call graph DOT（エントリポイント指定）
-rf-analyze ../samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute'
+ts-flow-analyzer samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute'
 
 # Graph IR DOT
-rf-analyze ../samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
 
 # 関数 CFG を DOT 出力
-rf-analyze ../samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute'
+ts-flow-analyzer samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute'
 
 # 特定メソッドだけ
-rf-analyze ../samples/usecase/approveOrder.ts --function 'ApproveOrderUseCase#checkRisk' --all --json
+ts-flow-analyzer samples/usecase/approveOrder.ts --function 'ApproveOrderUseCase#checkRisk' --all --json
 ```

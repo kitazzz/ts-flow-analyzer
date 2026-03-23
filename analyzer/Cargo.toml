@@ -1,10 +1,10 @@
 [package]
-name = "recast-forge-analyzer"
+name = "ts-flow-analyzer"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "rf-analyze"
+name = "ts-flow-analyzer"
 path = "src/main.rs"
 
 [features]
