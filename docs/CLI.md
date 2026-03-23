@@ -32,13 +32,26 @@
 rustc --version
 ```
 
-ツールチェイン固定には [`analyzer/rust-toolchain.toml`](../analyzer/rust-toolchain.toml) を使っています。`rustup` 管理の環境なら 1.92.0 を使う前提です。
+ツールチェイン固定には [`rust-toolchain.toml`](../rust-toolchain.toml) を使っています。repo root から `cargo build` / `cargo install --path analyzer` を実行する前提で、Rust 1.92.0 を要求します。
 
 `rustup` を使っている場合:
 
 ```sh
 rustup toolchain install 1.92.0
 rustup override set 1.92.0
+```
+
+`cargo install --path analyzer` で `rustc 1.90.0 is not supported` のように出る場合は、`cargo` が古い toolchain を見ています。まず repo root で次を確認してください。
+
+```sh
+rustc --version
+cargo --version
+```
+
+必要なら toolchain を明示して実行します。
+
+```sh
+cargo +1.92.0 install --path analyzer --force
 ```
 
 推奨は `cargo install --path analyzer` です。これで release ビルド済みの `ts-flow-analyzer` がインストールされます。
