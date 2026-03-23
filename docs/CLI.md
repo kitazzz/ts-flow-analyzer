@@ -62,6 +62,26 @@ cargo install --path analyzer
 
 通常は `~/.cargo/bin/ts-flow-analyzer` に入ります。
 
+### プリビルドバイナリを使う
+
+ソースから build したくない場合は、GitHub Releases のプリビルドバイナリを使えます。
+
+- 対応済み: `macOS arm64`
+- 対応済み: `macOS x86_64`
+- Releases: <https://github.com/kitazzz/ts-flow-analyzer/releases>
+
+release asset は `ts-flow-analyzer-vX.Y.Z-macos-arm64.tar.gz` または `ts-flow-analyzer-vX.Y.Z-macos-x86_64.tar.gz` という名前で添付されます。
+
+展開例:
+
+```sh
+tar -xzf ts-flow-analyzer-v0.1.0-macos-arm64.tar.gz
+cd ts-flow-analyzer-v0.1.0-macos-arm64
+./ts-flow-analyzer --help
+```
+
+`README.md`, `CLI.md`, `config.yaml.example` も同梱しています。
+
 ### PATH を通す
 
 `ts-flow-analyzer` をどこからでも呼びたい場合は、`~/.cargo/bin` を PATH に入れます。
@@ -91,6 +111,15 @@ CFG 拡張を使う場合は feature 付きでインストールします。
 ```sh
 cargo install --path analyzer --features cfg-analysis --force
 ```
+
+## GitHub Releases 配布
+
+`v*` tag を push すると、GitHub Actions が次の 2 種類の macOS バイナリを自動で build して release asset に添付します。
+
+- `macos-15` runner: `aarch64-apple-darwin` (`macOS arm64`)
+- `macos-15-intel` runner: `x86_64-apple-darwin` (`macOS x86_64`)
+
+workflow ファイルは [`release-macos.yml`](../.github/workflows/release-macos.yml) です。tag を切らずに Actions から `workflow_dispatch` で流した場合も、artifact として同じ tarball を取得できます。
 
 コマンドは 1 行で実行してください。途中で改行すると `-force` のように解釈されて失敗します。
 

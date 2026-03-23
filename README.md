@@ -14,6 +14,13 @@ ts-flow-analyzer samples/usecase/approveOrder.ts --data-flow --json
 ts-flow-analyzer samples/usecase/approveOrder.ts --graph --data-flow
 ```
 
+macOS 向けには GitHub Releases のプリビルド配布にも対応しています。
+
+- `macOS arm64`
+- `macOS x86_64`
+
+tag `v*` を push すると、対応バイナリが release asset として添付されます。
+
 ## Main Outputs
 
 - metrics
