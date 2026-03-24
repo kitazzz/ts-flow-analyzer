@@ -10,3 +10,6 @@ decision_table:
   failure_when_present:
     - error
     - reason
+resolver_factories:
+  presets:
+    - tailor-sdk

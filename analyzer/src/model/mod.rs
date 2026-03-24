@@ -31,6 +31,7 @@ pub enum SymbolKind {
     VariableFunction,
     Method,
     Class,
+    Resolver,
 }
 
 impl std::fmt::Display for SymbolKind {
@@ -40,6 +41,7 @@ impl std::fmt::Display for SymbolKind {
             SymbolKind::VariableFunction => write!(f, "variableFunction"),
             SymbolKind::Method => write!(f, "method"),
             SymbolKind::Class => write!(f, "class"),
+            SymbolKind::Resolver => write!(f, "resolver"),
         }
     }
 }

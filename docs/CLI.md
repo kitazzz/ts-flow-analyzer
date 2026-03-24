@@ -80,7 +80,7 @@ cd ts-flow-analyzer-v0.1.0-macos-arm64
 ./ts-flow-analyzer --help
 ```
 
-`README.md`, `CLI.md`, `config.yaml.example` も同梱しています。
+`README.md`, `CLI.md`, `analyze.config.yaml` も同梱しています。
 
 ### PATH を通す
 
@@ -173,7 +173,7 @@ ts-flow-analyzer [OPTIONS] <FILE>
 
 `<FILE>` は解析対象のソースファイルです。実装上はファイル拡張子から `SourceType` を判定しています。現状のサンプルと主用途は `.ts` です。
 
-`config.yaml` がカレントディレクトリにあれば自動で読み込みます。別パスを使う場合は `--config <PATH>` を指定します。
+`analyze.config.yaml` がカレントディレクトリにあれば自動で読み込みます。無ければ legacy な `config.yaml` も読み込みます。別パスを使う場合は `--config <PATH>` を指定します。
 
 ### オプション
 
@@ -259,7 +259,7 @@ ts-flow-analyzer samples/usecase/approveOrder.ts --decision --decision-enhanced 
 config を明示して decision table を出す:
 
 ```sh
-ts-flow-analyzer samples/usecase/approveOrder.ts --decision --json --config analyzer/config.yaml.example
+ts-flow-analyzer samples/usecase/approveOrder.ts --decision --json --config analyzer/analyze.config.yaml
 ```
 
 call graph を JSON で見る:
@@ -325,13 +325,14 @@ ts-flow-analyzer samples/utils/validation.ts --all --json
 - 変数に代入された function / arrow function
 - class declaration
 - class method
+- `createResolver({ name, body })` パターンの resolver（`body` callback を解析対象として抽出）
 
 JSON では各シンボルごとに `FunctionReport` 相当のオブジェクトを返します。
 
 主なフィールド:
 
 - `symbolName`: 表示用の識別子
-- `symbolKind`: `function` / `variableFunction` / `method` / `class`
+- `symbolKind`: `function` / `variableFunction` / `method` / `class` / `resolver`
 - `className`: 所属 class 名
 - `memberName`: method や function の元名
 - `functionName`: 後方互換用の名前
@@ -432,9 +433,9 @@ JSON では各シンボルごとに `FunctionReport` 相当のオブジェクト
 - `mcdcCases`: predicate ごとの witness pair
 - `happyPath`: 成功経路
 
-### config.yaml
+### analyze.config.yaml / config.yaml
 
-decision table の `happyPath` 判定と `Success` / `Failure` ラベルは `config.yaml` で調整できます。
+decision table の `happyPath` 判定と `Success` / `Failure` ラベルは `analyze.config.yaml` で調整できます。`analyze.config.yaml` が無い場合は legacy な `config.yaml` も読み込みます。
 
 例:
 
@@ -451,6 +452,9 @@ decision_table:
   failure_when_present:
     - error
     - reason
+resolver_factories:
+  presets:
+    - tailor-sdk
 ```
 
 意味:
@@ -458,8 +462,9 @@ decision_table:
 - `success_when_true`: `return { ok: true }` のように、`true` なら成功とみなすキー
 - `failure_when_false`: `return { ok: false }` のように、`false` なら失敗とみなすキー
 - `failure_when_present`: `return { error: '...' }` のように、キーが存在したら失敗とみなすキー
+- `resolver_factories.presets: [tailor-sdk]`: `@tailor-platform/sdk` / `@tailor-platform/api` から import された `createResolver` を resolver factory として扱います
 
-未指定時は上のデフォルトが使われます。サンプルは [`analyzer/config.yaml.example`](../analyzer/config.yaml.example) にあります。
+未指定時は上のデフォルトが使われます。サンプルは [`analyzer/analyze.config.yaml`](../analyzer/analyze.config.yaml) にあります。
 
 この出力は厳密な形式検証としての strict MC/DC ではなく、現状は branch-sensitive な近似出力です。
 

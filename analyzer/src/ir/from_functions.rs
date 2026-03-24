@@ -18,7 +18,7 @@ pub fn functions_to_graph(
         let kind = match func.symbol_kind {
             SymbolKind::Class => NodeKind::Class,
             SymbolKind::Method => NodeKind::Method,
-            SymbolKind::Function | SymbolKind::VariableFunction => NodeKind::Function,
+            SymbolKind::Function | SymbolKind::VariableFunction | SymbolKind::Resolver => NodeKind::Function,
         };
 
         let span = func.node.span();
