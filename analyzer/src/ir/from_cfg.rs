@@ -7,18 +7,26 @@ use oxc_span::GetSpan;
 
 use crate::ast::collect_functions::FunctionNode;
 use crate::control_flow::context::CfgContext;
-use crate::control_flow::dot::find_block_by_span;
+use crate::control_flow::util::find_block_by_span;
 
 use super::builder::GraphBuilder;
 use super::graph::*;
+
+/// Result of building CFG graph nodes for a single function.
+/// Exposed so ICFG can connect its edges to existing CfgBlock graph nodes.
+pub struct CfgBuildResult {
+    pub block_to_node: HashMap<oxc_cfg::BlockNodeId, NodeId>,
+    pub entry_block: oxc_cfg::BlockNodeId,
+    pub reachable_blocks: BTreeSet<oxc_cfg::BlockNodeId>,
+}
 
 pub fn cfg_to_graph(
     ctx: &CfgContext<'_>,
     node: &FunctionNode<'_>,
     parent_id: NodeId,
     builder: &mut GraphBuilder,
-) {
-    let Some(cfg) = ctx.semantic.cfg() else { return };
+) -> Option<CfgBuildResult> {
+    let cfg = ctx.semantic.cfg()?;
 
     // Entry resolution: same 2-stage fallback as render_cfg_dot (control_flow/dot.rs:20-24)
     let entry = if let Some(span) = node.first_stmt_span() {
@@ -26,7 +34,7 @@ pub fn cfg_to_graph(
     } else {
         find_block_by_span(ctx, node.span())
     };
-    let Some(entry) = entry else { return };
+    let entry = entry?;
 
     let graph = cfg.graph();
 
@@ -46,7 +54,7 @@ pub fn cfg_to_graph(
     }
 
     if visited.is_empty() {
-        return;
+        return None;
     }
 
     let debug_ctx = ctx.semantic.nodes().into();
@@ -143,4 +151,10 @@ pub fn cfg_to_graph(
             );
         }
     }
+
+    Some(CfgBuildResult {
+        block_to_node,
+        entry_block: entry,
+        reachable_blocks: visited,
+    })
 }

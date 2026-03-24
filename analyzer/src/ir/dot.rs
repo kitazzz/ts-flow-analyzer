@@ -2,10 +2,10 @@ use std::collections::BTreeSet;
 
 use super::graph::*;
 
-/// Render a Graph IR as DOT, filtered to a specific function and its 1-hop neighborhood.
+/// Render a Graph IR as DOT, filtered to a specific function and its neighborhood.
 ///
-/// Includes: the root function node, all its Contains descendants, and all 1-hop
-/// targets of outgoing Call/Cfg/DecisionBranch edges from those descendants.
+/// Includes: the root function node, all its Contains descendants, 1-hop targets
+/// of outgoing edges, and ICFG callee clusters reachable via Icfg::Call edges.
 pub fn render_graph_dot(graph: &GraphIR, filter_fn: &str) -> String {
     // Find the root function node
     let root = graph.nodes.iter().find(|n| {
@@ -39,6 +39,50 @@ pub fn render_graph_dot(graph: &GraphIR, filter_fn: &str) -> String {
         }
     }
 
+    // ICFG-aware expansion: for each newly-visible FunctionEntry, find its parent
+    // Function via incoming Contains, then BFS that parent's Contains descendants
+    // to include the full callee cluster (CfgBlocks, FunctionExit, etc.).
+    let new_entries: Vec<NodeId> = visible_ids
+        .difference(&core_ids)
+        .copied()
+        .filter(|&id| {
+            graph.nodes.iter().any(|n| n.id == id && matches!(n.kind, NodeKind::FunctionEntry))
+        })
+        .collect();
+
+    for entry_id in new_entries {
+        // Find parent Function node via incoming Contains edge
+        if let Some(parent_edge) = graph.edges.iter().find(|e| {
+            e.target == entry_id && matches!(e.kind, EdgeKind::Contains)
+        }) {
+            let parent_id = parent_edge.source;
+            // BFS the parent's Contains descendants (use separate visited set
+            // because the parent may already be in visible_ids from 1-hop)
+            let mut callee_visited = BTreeSet::new();
+            let mut callee_queue = vec![parent_id];
+            while let Some(id) = callee_queue.pop() {
+                if callee_visited.insert(id) {
+                    visible_ids.insert(id);
+                    for edge in &graph.edges {
+                        if edge.source == id && matches!(edge.kind, EdgeKind::Contains) {
+                            callee_queue.push(edge.target);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Also include incoming Icfg::Return edges targeting core nodes
+    for edge in &graph.edges {
+        if matches!(edge.kind, EdgeKind::Icfg { icfg_type: IcfgEdgeType::Return })
+            && core_ids.contains(&edge.target)
+            && visible_ids.contains(&edge.source)
+        {
+            // source is already in visible_ids from callee expansion above
+        }
+    }
+
     // Collect visible edges
     let visible_edges: Vec<&GraphEdge> = graph.edges.iter().filter(|e| {
         visible_ids.contains(&e.source) && visible_ids.contains(&e.target)
@@ -58,7 +102,7 @@ pub fn render_graph_dot(graph: &GraphIR, filter_fn: &str) -> String {
     }
     dot.push_str("  }\n\n");
 
-    // External nodes (1-hop targets not in core)
+    // External nodes (visible but not in core)
     for id in &visible_ids {
         if core_ids.contains(id) { continue; }
         if let Some(node) = graph.nodes.iter().find(|n| n.id == *id) {
@@ -94,6 +138,8 @@ fn render_node(node: &GraphNode) -> String {
         NodeKind::ExternalSymbol => ("box", "dashed"),
         NodeKind::DataFlowDef => ("note", "filled"),
         NodeKind::DataFlowUse => ("ellipse", "\"\""),
+        NodeKind::FunctionEntry => ("oval", "filled"),
+        NodeKind::FunctionExit => ("oval", "filled"),
     };
 
     let fill = match node.kind {
@@ -101,6 +147,8 @@ fn render_node(node: &GraphNode) -> String {
         NodeKind::Class => ", fillcolor=\"lightgrey\"",
         NodeKind::ExternalSymbol => ", fillcolor=\"lightblue\"",
         NodeKind::DataFlowDef => ", fillcolor=\"lightyellow\"",
+        NodeKind::FunctionEntry => ", fillcolor=\"palegreen\"",
+        NodeKind::FunctionExit => ", fillcolor=\"lightsalmon\"",
         _ => "",
     };
 
@@ -141,6 +189,14 @@ fn render_edge(edge: &GraphEdge) -> String {
         EdgeKind::DataDep { .. } => {
             let label = edge.label.as_deref().unwrap_or("def→use");
             ("orange", "solid", label.to_string())
+        }
+        EdgeKind::Icfg { icfg_type } => {
+            match icfg_type {
+                IcfgEdgeType::Call => ("purple", "solid", "icfg:call".to_string()),
+                IcfgEdgeType::Return => ("purple", "dashed", "icfg:return".to_string()),
+                IcfgEdgeType::EntryFlow => ("darkgreen", "solid", "icfg:entry".to_string()),
+                IcfgEdgeType::ExitFlow => ("darkred", "solid", "icfg:exit".to_string()),
+            }
         }
     };
 

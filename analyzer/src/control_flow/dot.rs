@@ -3,11 +3,11 @@ use std::collections::{BTreeSet, VecDeque};
 use oxc_cfg::graph::visit::EdgeRef;
 use oxc_cfg::EdgeType;
 use oxc_semantic::dot::DebugDot;
-use oxc_span::GetSpan;
 
 use crate::ast::collect_functions::FunctionNode;
 
 use super::context::CfgContext;
+use super::util::find_block_by_span;
 
 /// Render a function-local CFG subgraph as DOT.
 ///
@@ -111,13 +111,6 @@ pub fn render_cfg_dot(ctx: &CfgContext<'_>, node: &FunctionNode<'_>) -> Option<S
 
     dot.push_str("}\n");
     Some(dot)
-}
-
-pub(crate) fn find_block_by_span(ctx: &CfgContext<'_>, span: oxc_span::Span) -> Option<oxc_cfg::BlockNodeId> {
-    let nodes = ctx.semantic.nodes();
-    nodes.iter_enumerated().find_map(|(node_id, ast_node)| {
-        (ast_node.kind().span() == span).then(|| nodes.cfg_id(node_id))
-    })
 }
 
 fn escape_dot(value: &str) -> String {

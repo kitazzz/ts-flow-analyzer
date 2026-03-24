@@ -37,6 +37,8 @@ pub enum NodeKind {
     ExternalSymbol,
     DataFlowDef,
     DataFlowUse,
+    FunctionEntry,
+    FunctionExit,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -62,12 +64,27 @@ pub enum EdgeKind {
     DecisionBranch { branch: bool },
     #[serde(rename_all = "camelCase")]
     DataDep { dep_kind: DataDepKind },
+    #[serde(rename_all = "camelCase")]
+    Icfg { icfg_type: IcfgEdgeType },
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DataDepKind {
     DefUse,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum IcfgEdgeType {
+    /// FunctionEntry → first CfgBlock
+    EntryFlow,
+    /// Terminal CfgBlock → FunctionExit
+    ExitFlow,
+    /// Caller call-site CfgBlock → callee FunctionEntry
+    Call,
+    /// Callee FunctionExit → caller return-site CfgBlock
+    Return,
 }
 
 #[derive(Debug, Clone, Serialize)]

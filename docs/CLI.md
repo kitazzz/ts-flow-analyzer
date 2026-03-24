@@ -197,6 +197,7 @@ ts-flow-analyzer [OPTIONS] <FILE>
 - `--decision`: decision table を含める
 - `--call-graph`: call graph を JSON 出力に含める
 - `--graph`: unified Graph IR を JSON 出力に含める（`--json` を暗黙に有効化）
+- `--icfg`: ICFG（interprocedural control flow graph）を Graph IR に追加する。関数の entry/exit ノードと、解決済み同一ファイル内呼び出しの call/return edge を生成する。`--graph` または `--graph-dot` と `cfg-analysis` feature 付きビルドが必要
 
 DOT 可視化:
 
@@ -216,6 +217,7 @@ DOT 可視化:
 - class method の `symbolName` は `ClassName#methodName` 形式です
 - `--decision-enhanced` と `--cfg-dot` で CFG 機能を使うには `cfg-analysis` feature 付きビルドが必要です
 - `--graph` / `--graph-dot` は feature なしでも使えますが、`cfg-analysis` 付きビルドのときだけ `cfgBlock` / `cfg` edge が含まれます
+- `--icfg` は `cfg-analysis` feature 付きビルドが必須です。feature なしで使うとエラーで終了します。`--graph` / `--graph-dot` なしで使うと警告を出して無視されます
 - `--graph` は常にファイル全体を graph 化します。`--function` は `functions` 配列のみに適用され、`graph` キーは絞り込みません
 
 ## 実行例
@@ -511,9 +513,9 @@ resolver_factories:
 
 `--graph` は file-scope の unified Graph IR を返します。ノードとエッジの基本形は次です。
 
-- `nodes[].kind`: `function` / `class` / `method` / `callSite` / `externalSymbol` / `decisionPoint` / `cfgBlock` / `dataFlowDef` / `dataFlowUse`
+- `nodes[].kind`: `function` / `class` / `method` / `callSite` / `externalSymbol` / `decisionPoint` / `cfgBlock` / `dataFlowDef` / `dataFlowUse` / `functionEntry` / `functionExit`
 - `nodes[].loc`: `line`, `spanStart`, `spanEnd`
-- `edges[].kind.type`: `contains` / `call` / `decisionBranch` / `cfg` / `dataDep`
+- `edges[].kind.type`: `contains` / `call` / `decisionBranch` / `cfg` / `dataDep` / `icfg`
 
 現在の構成は次のとおりです。
 
@@ -526,6 +528,11 @@ resolver_factories:
 - dataFlowDef `-[dataDep]->` dataFlowUse
 - function `-[contains]->` cfgBlock（`cfg-analysis` 付きビルド時）
 - cfgBlock `-[cfg]->` cfgBlock
+- function `-[contains]->` functionEntry / functionExit（`--icfg` 時）
+- functionEntry `-[icfg:entryFlow]->` 先頭 cfgBlock
+- 末端 cfgBlock `-[icfg:exitFlow]->` functionExit
+- caller の cfgBlock `-[icfg:call]->` callee の functionEntry
+- callee の functionExit `-[icfg:return]->` caller の return-site cfgBlock
 
 補足:
 
@@ -535,6 +542,7 @@ resolver_factories:
 - decision graph はまだ outcome node まで含む完全 DAG ではありません。現状の `decisionBranch` は truth row から導いた summary edge です
 - `--graph` 単体では decision point は出ません。`--decision` または `--all` を併用したときだけ含まれます
 - `--graph` 単体では data-flow ノードは出ません。`--data-flow` または `--all` を併用したときだけ含まれます
+- `--icfg` を付けると `functionEntry` / `functionExit` ノードと `icfg` edge（`entryFlow` / `exitFlow` / `call` / `return`）が追加されます。解決済みの同一ファイル内呼び出しのみが対象です
 
 例:
 
@@ -571,12 +579,13 @@ dot -Tsvg callgraph.dot -o callgraph.svg
 - その `contains` 子孫
 - そこから出る `call` / `cfg` / `decisionBranch` の 1-hop target
 
-`--decision` を付けると decision point と `decisionBranch` も含まれます。`--data-flow` を付けると `dataFlowDef` / `dataFlowUse` と橙色の `dataDep` edge も含まれます。`cfg-analysis` 付きビルドなら `cfgBlock` も含まれます。
+`--decision` を付けると decision point と `decisionBranch` も含まれます。`--data-flow` を付けると `dataFlowDef` / `dataFlowUse` と橙色の `dataDep` edge も含まれます。`cfg-analysis` 付きビルドなら `cfgBlock` も含まれます。`--icfg` を付けると、callee の `functionEntry` への `icfg:call` edge を辿り、callee 関数の全 `cfgBlock` / `functionExit` をクラスタとして展開表示します。
 
 ```sh
 ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'
 ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --decision
 ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --data-flow
+ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --icfg
 ```
 
 ### CFG / DOT

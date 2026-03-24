@@ -442,6 +442,8 @@ GraphIR
 | DataFlowDef | def site |
 | DataFlowUse | use site |
 | CfgBlock | CFG の basic block（`cfg-analysis` 時のみ） |
+| FunctionEntry | 関数の entry sentinel（`--icfg` 時） |
+| FunctionExit | 関数の exit sentinel（`--icfg` 時） |
 
 #### EdgeKind
 
@@ -452,6 +454,7 @@ GraphIR
 | DecisionBranch | DecisionPoint 間の分岐サマリ |
 | DataDep | DataFlowDef→DataFlowUse |
 | Cfg | CFG block 間遷移 |
+| Icfg | interprocedural CFG edge（`entryFlow` / `exitFlow` / `call` / `return`） |
 
 #### 現在の構築方針
 
@@ -461,6 +464,8 @@ GraphIR
 - `DecisionPoint` は decision table の predicate から生成し、truth row を使って summary `DecisionBranch` を張る
 - `DataFlowDef` / `DataFlowUse` は `DataFlowReport` から生成し、`DataDep` edge を張る
 - `CfgBlock` は `cfg-analysis` 付きビルド時のみ生成
+- `FunctionEntry` / `FunctionExit` は `--icfg` 時に各関数へ 1 つずつ生成し、`Contains` で親 Function/Method に所属させる
+- `Icfg` edge は `entryFlow`（FunctionEntry→先頭 CfgBlock）、`exitFlow`（末端 CfgBlock→FunctionExit）、`call`（caller CfgBlock→callee FunctionEntry）、`return`（callee FunctionExit→caller return-site CfgBlock）の 4 種
 
 **制約**:
 
@@ -670,7 +675,7 @@ Oxc 0.121 は AST 型として以下を使用:
 | O8 | Graph IR foundation (`--graph`, `--graph-dot`) | 完了 |
 | O8.5 | Local def-use / data-flow foundation | 完了 |
 | O9 | Outcome node / terminal edge enrichment | issue #7 |
-| O10 | Single-file ICFG foundation | 計画済み |
+| O10 | Single-file ICFG foundation | 完了 |
 | O11 | SDG-lite（control-dep + local data-dep + ICFG） | 計画済み |
 | O12 | CPG projection（sparse syntax layer 含む） | 計画済み |
 | O13 | LLM 向け IR / decision DAG 拡張 | 未着手 |
