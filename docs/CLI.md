@@ -197,11 +197,12 @@ ts-flow-analyzer [OPTIONS] <FILE>
 - `--decision`: decision table を含める
 - `--call-graph`: call graph を JSON 出力に含める
 - `--graph`: unified Graph IR を JSON 出力に含める（`--json` を暗黙に有効化）
-- `--icfg`: ICFG（interprocedural control flow graph）を Graph IR に追加する。関数の entry/exit ノードと、解決済み同一ファイル内呼び出しの call/return edge を生成する。`--graph` または `--graph-dot` と `cfg-analysis` feature 付きビルドが必要
+- `--icfg`: ICFG（interprocedural control flow graph）を Graph IR に追加する。関数の entry/exit ノードと、解決済み同一ファイル内呼び出しの call/return edge を生成する。単体で使うと `--graph`（`--json` を暗黙に有効化）を含む。`cfg-analysis` feature 付きビルドが必要
 
 DOT 可視化:
 
 - `--call-graph-dot <FUNCTION>`: 指定した function からの到達可能な呼び出しグラフを DOT で stdout に出す
+- `--icfg-dot <FUNCTION>`: 高レベル ICFG を DOT で stdout に出す。エントリポイントを指定すると到達可能な部分グラフのみ表示。空文字で全関数表示。`cfg-analysis` feature 付きビルドが必要
 - `--graph-dot <FUNCTION>`: 指定した function / method を起点に Graph IR を DOT で stdout に出す
 - `--cfg-dot <FUNCTION>`: 指定した function / method の CFG を DOT で stdout に出す
 
@@ -217,7 +218,8 @@ DOT 可視化:
 - class method の `symbolName` は `ClassName#methodName` 形式です
 - `--decision-enhanced` と `--cfg-dot` で CFG 機能を使うには `cfg-analysis` feature 付きビルドが必要です
 - `--graph` / `--graph-dot` は feature なしでも使えますが、`cfg-analysis` 付きビルドのときだけ `cfgBlock` / `cfg` edge が含まれます
-- `--icfg` は `cfg-analysis` feature 付きビルドが必須です。feature なしで使うとエラーで終了します。`--graph` / `--graph-dot` なしで使うと警告を出して無視されます
+- `--icfg` は `cfg-analysis` feature 付きビルドが必須です。feature なしで使うとエラーで終了します。単体で使うと `--graph`（`--json` を暗黙に有効化）を含みます
+- `--icfg-dot` は `cfg-analysis` feature 付きビルドが必須です。feature なしで使うとエラーで終了します
 - `--graph` は常にファイル全体を graph 化します。`--function` は `functions` 配列のみに適用され、`graph` キーは絞り込みません
 
 ## 実行例
@@ -304,6 +306,24 @@ DOT をファイルに保存する:
 
 ```sh
 ts-flow-analyzer samples/usecase/approveOrder.ts --cfg-dot 'ApproveOrderUseCase#execute' > execute.dot
+```
+
+ICFG 付き Graph IR を JSON で見る:
+
+```sh
+ts-flow-analyzer samples/usecase/approveOrder.ts --icfg
+```
+
+高レベル ICFG を DOT で出す:
+
+```sh
+ts-flow-analyzer samples/usecase/approveOrder.ts --icfg-dot 'ApproveOrderUseCase#execute'
+```
+
+全関数の ICFG を DOT で出す:
+
+```sh
+ts-flow-analyzer samples/usecase/approveOrder.ts --icfg-dot ''
 ```
 
 Graph IR を DOT で出す:
@@ -588,6 +608,41 @@ ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCas
 ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute' --icfg
 ```
 
+### ICFG DOT
+
+`--icfg-dot <FUNCTION>` は、高レベルの ICFG（interprocedural control flow graph）を DOT で出力して終了します。
+
+各関数を 3 つのノード（entry / body / exit）を持つクラスタとして表示し、関数間の call/return edge を描きます。
+
+ノードの色分け:
+
+- 緑色（oval）: entry — 関数エントリポイント
+- 黄色（rectangle）: body — 関数本体（call/return のアンカー）
+- 橙色（oval）: exit — 関数出口
+
+Edge の色分け:
+
+- 灰色: 関数内部の flow（entry → body → exit）
+- 紫色（実線）: call edge（caller の body → callee の entry）
+- 紫色（破線）: return edge（callee の exit → caller の body）
+
+エントリポイントを指定すると、BFS で到達可能な関数のみ表示します。空文字（`''`）で全関数を表示します。
+
+```sh
+# 特定エントリポイントから到達可能な ICFG
+ts-flow-analyzer samples/usecase/approveOrder.ts --icfg-dot 'ApproveOrderUseCase#execute'
+
+# 全関数の ICFG
+ts-flow-analyzer samples/usecase/approveOrder.ts --icfg-dot ''
+```
+
+SVG 化:
+
+```sh
+ts-flow-analyzer samples/usecase/approveOrder.ts --icfg-dot 'ApproveOrderUseCase#execute' > icfg.dot
+dot -Tsvg icfg.dot -o icfg.svg
+```
+
 ### CFG / DOT
 
 `--cfg-dot <FUNCTION>` は、指定した function / method の CFG 部分グラフを DOT 形式で stdout に出して終了します。
@@ -705,6 +760,12 @@ ts-flow-analyzer samples/usecase/approveOrder.ts --graph --data-flow
 
 # call graph DOT（エントリポイント指定）
 ts-flow-analyzer samples/usecase/approveOrder.ts --call-graph-dot 'ApproveOrderUseCase#execute'
+
+# ICFG 付き Graph IR JSON
+ts-flow-analyzer samples/usecase/approveOrder.ts --icfg
+
+# ICFG DOT（エントリポイント指定）
+ts-flow-analyzer samples/usecase/approveOrder.ts --icfg-dot 'ApproveOrderUseCase#execute'
 
 # Graph IR DOT
 ts-flow-analyzer samples/usecase/approveOrder.ts --graph-dot 'ApproveOrderUseCase#execute'

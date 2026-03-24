@@ -78,14 +78,11 @@ fn main() {
     let collected =
         collect_functions_with_resolver_config(&ret.program, &source, resolver_config);
 
-    // Validate --icfg usage
+    // Validate --icfg / --icfg-dot usage
     #[cfg(not(feature = "cfg-analysis"))]
-    if cli.icfg {
-        eprintln!("--icfg requires building with --features cfg-analysis");
+    if cli.icfg || cli.icfg_dot.is_some() {
+        eprintln!("--icfg / --icfg-dot requires building with --features cfg-analysis");
         std::process::exit(1);
-    }
-    if cli.icfg && !cli.graph && cli.graph_dot.is_none() {
-        eprintln!("warning: --icfg has no effect without --graph or --graph-dot");
     }
 
     // Build CFG context when needed (cfg-analysis feature + --decision-enhanced, --cfg-dot, --graph, or --icfg)
@@ -93,7 +90,8 @@ fn main() {
         || cli.cfg_dot.is_some()
         || cli.graph
         || cli.graph_dot.is_some()
-        || cli.icfg;
+        || cli.icfg
+        || cli.icfg_dot.is_some();
 
     #[cfg(feature = "cfg-analysis")]
     let cfg_ctx = _need_cfg.then(|| control_flow::build_cfg_context(&ret.program));
@@ -156,6 +154,73 @@ fn main() {
         let dot = callgraph::dot::render_call_graph_dot(&graph, entry);
         println!("{dot}");
         return;
+    }
+
+    // Handle --icfg-dot: build ICFG, render high-level DOT, and exit
+    if let Some(ref entrypoint) = cli.icfg_dot {
+        #[cfg(feature = "cfg-analysis")]
+        {
+            let cg =
+                build_call_graph(&collected, &ret.program, &source, cli.include_builtin_calls);
+
+            // Build CFG results for all functions
+            let mut builder = ir::builder::GraphBuilder::new();
+            let symbol_map = ir::from_functions::functions_to_graph(&collected, &mut builder);
+            let mut cfg_results: std::collections::HashMap<
+                String,
+                ir::from_cfg::CfgBuildResult,
+            > = std::collections::HashMap::new();
+            if let Some(ref ctx) = cfg_ctx {
+                for func in &collected {
+                    if matches!(func.node, FunctionNode::Class(_)) {
+                        continue;
+                    }
+                    if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
+                        if let Some(result) =
+                            ir::from_cfg::cfg_to_graph(ctx, &func.node, parent_id, &mut builder)
+                        {
+                            cfg_results.insert(func.symbol_name.clone(), result);
+                        }
+                    }
+                }
+            }
+
+            let icfg_report = icfg::build::build_icfg(
+                cfg_ctx.as_ref().unwrap(),
+                &cg,
+                &cfg_results,
+            );
+
+            // Validate entrypoint exists
+            if !entrypoint.is_empty()
+                && !icfg_report.functions.contains_key(entrypoint.as_str())
+            {
+                let mut available: Vec<&str> =
+                    icfg_report.functions.keys().map(|s| s.as_str()).collect();
+                available.sort();
+                eprintln!(
+                    "error: function '{}' not found in ICFG. Available: {}",
+                    entrypoint,
+                    available.join(", ")
+                );
+                std::process::exit(1);
+            }
+
+            let entry = if entrypoint.is_empty() {
+                None
+            } else {
+                Some(entrypoint.as_str())
+            };
+            let dot = icfg::dot::render_icfg_dot(&icfg_report, entry);
+            println!("{dot}");
+            return;
+        }
+        #[cfg(not(feature = "cfg-analysis"))]
+        {
+            let _ = entrypoint;
+            eprintln!("--icfg-dot requires building with --features cfg-analysis");
+            std::process::exit(1);
+        }
     }
 
     // Handle --graph-dot: build graph, render DOT, and exit
@@ -393,7 +458,7 @@ fn main() {
         });
     }
 
-    let include_graph = cli.graph;
+    let include_graph = cli.graph || cli.icfg; // --icfg implies --graph
     let output_json = cli.json || include_graph; // --graph implies --json
 
     if output_json {

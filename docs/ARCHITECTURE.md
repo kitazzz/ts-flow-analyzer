@@ -130,6 +130,11 @@ src/
 │   ├── context.rs             # Semantic + CFG コンテキスト
 │   ├── dot.rs                 # CFG DOT レンダリング
 │   └── reachability.rs        # 到達可能性判定
+├── icfg/
+│   ├── mod.rs                 # ICFG モジュール定義
+│   ├── model.rs               # IcfgReport, FunctionIcfgInfo, IcfgConnection
+│   ├── build.rs               # build_icfg() — CFG + call graph → ICFG
+│   └── dot.rs                 # 高レベル ICFG DOT レンダリング
 ├── callgraph/
 │   ├── mod.rs                 # Call graph 構築オーケストレータ
 │   ├── model.rs               # CallEdge, CallGraphNode 等
