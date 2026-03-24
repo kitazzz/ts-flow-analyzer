@@ -25,7 +25,8 @@ pub struct Cli {
     #[arg(value_name = "FILE", help_heading = "Input")]
     pub file: String,
 
-    /// Path to analyzer config YAML. If omitted, ./config.yaml is loaded when present.
+    /// Path to analyzer config YAML. If omitted, ./analyze.config.yaml
+    /// (or legacy ./config.yaml) is loaded when present.
     #[arg(long, value_name = "PATH", help_heading = "Input")]
     pub config: Option<String>,
 

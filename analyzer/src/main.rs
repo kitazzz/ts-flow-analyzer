@@ -18,7 +18,7 @@ use oxc_parser::Parser as OxcParser;
 use oxc_span::SourceType;
 use std::path::Path;
 
-use ast::collect_functions::{collect_functions, FunctionNode};
+use ast::collect_functions::{collect_functions_with_resolver_config, FunctionNode};
 use callgraph::build_call_graph;
 use cli::Cli;
 use config::load_config;
@@ -70,7 +70,12 @@ fn main() {
     }
 
     let file_path = path.to_string_lossy().to_string();
-    let collected = collect_functions(&ret.program, &source);
+    let resolver_config = config
+        .resolver_factories
+        .has_presets()
+        .then_some(&config.resolver_factories);
+    let collected =
+        collect_functions_with_resolver_config(&ret.program, &source, resolver_config);
 
     // Build CFG context when needed (cfg-analysis feature + --decision-enhanced, --cfg-dot, or --graph)
     let _need_cfg =
@@ -578,5 +583,6 @@ fn symbol_kind_str(kind: &SymbolKind) -> &'static str {
         SymbolKind::VariableFunction => "variableFunction",
         SymbolKind::Method => "method",
         SymbolKind::Class => "class",
+        SymbolKind::Resolver => "resolver",
     }
 }
