@@ -7,4 +7,6 @@ pub mod from_cfg;
 pub mod from_data_flow;
 pub mod from_decision;
 pub mod from_functions;
+#[cfg(feature = "cfg-analysis")]
+pub mod from_icfg;
 pub mod graph;

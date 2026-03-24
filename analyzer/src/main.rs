@@ -6,6 +6,7 @@ mod control_flow;
 mod dataflow;
 mod decision;
 mod effects;
+mod icfg;
 mod ir;
 mod metrics;
 mod model;
@@ -77,9 +78,22 @@ fn main() {
     let collected =
         collect_functions_with_resolver_config(&ret.program, &source, resolver_config);
 
-    // Build CFG context when needed (cfg-analysis feature + --decision-enhanced, --cfg-dot, or --graph)
-    let _need_cfg =
-        cli.decision_enhanced || cli.cfg_dot.is_some() || cli.graph || cli.graph_dot.is_some();
+    // Validate --icfg usage
+    #[cfg(not(feature = "cfg-analysis"))]
+    if cli.icfg {
+        eprintln!("--icfg requires building with --features cfg-analysis");
+        std::process::exit(1);
+    }
+    if cli.icfg && !cli.graph && cli.graph_dot.is_none() {
+        eprintln!("warning: --icfg has no effect without --graph or --graph-dot");
+    }
+
+    // Build CFG context when needed (cfg-analysis feature + --decision-enhanced, --cfg-dot, --graph, or --icfg)
+    let _need_cfg = cli.decision_enhanced
+        || cli.cfg_dot.is_some()
+        || cli.graph
+        || cli.graph_dot.is_some()
+        || cli.icfg;
 
     #[cfg(feature = "cfg-analysis")]
     let cfg_ctx = _need_cfg.then(|| control_flow::build_cfg_context(&ret.program));
@@ -186,13 +200,33 @@ fn main() {
         #[cfg(feature = "cfg-analysis")]
         {
             if let Some(ref ctx) = cfg_ctx {
+                let mut cfg_results: std::collections::HashMap<
+                    String,
+                    ir::from_cfg::CfgBuildResult,
+                > = std::collections::HashMap::new();
                 for func in &collected {
                     if matches!(func.node, FunctionNode::Class(_)) {
                         continue;
                     }
                     if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
-                        ir::from_cfg::cfg_to_graph(ctx, &func.node, parent_id, &mut builder);
+                        if let Some(result) =
+                            ir::from_cfg::cfg_to_graph(ctx, &func.node, parent_id, &mut builder)
+                        {
+                            cfg_results.insert(func.symbol_name.clone(), result);
+                        }
                     }
+                }
+
+                // ICFG layer
+                if cli.icfg {
+                    let icfg_report =
+                        icfg::build::build_icfg(ctx, &cg, &cfg_results);
+                    ir::from_icfg::icfg_to_graph(
+                        &icfg_report,
+                        &symbol_map,
+                        &cfg_results,
+                        &mut builder,
+                    );
                 }
             }
         }
@@ -409,18 +443,36 @@ fn main() {
                 #[cfg(feature = "cfg-analysis")]
                 {
                     if let Some(ref ctx) = cfg_ctx {
+                        let mut cfg_results: std::collections::HashMap<
+                            String,
+                            ir::from_cfg::CfgBuildResult,
+                        > = std::collections::HashMap::new();
                         for func in &collected {
                             if matches!(func.node, FunctionNode::Class(_)) {
                                 continue;
                             }
                             if let Some(&parent_id) = symbol_map.get(&func.symbol_name) {
-                                ir::from_cfg::cfg_to_graph(
+                                if let Some(result) = ir::from_cfg::cfg_to_graph(
                                     ctx,
                                     &func.node,
                                     parent_id,
                                     &mut builder,
-                                );
+                                ) {
+                                    cfg_results.insert(func.symbol_name.clone(), result);
+                                }
                             }
+                        }
+
+                        // ICFG layer
+                        if cli.icfg {
+                            let icfg_report =
+                                icfg::build::build_icfg(ctx, &cg, &cfg_results);
+                            ir::from_icfg::icfg_to_graph(
+                                &icfg_report,
+                                &symbol_map,
+                                &cfg_results,
+                                &mut builder,
+                            );
                         }
                     }
                 }

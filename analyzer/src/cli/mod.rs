@@ -6,11 +6,13 @@ Quick start:
   ts-flow-analyzer <FILE> --all --json
   ts-flow-analyzer <FILE> --graph --decision --data-flow
   ts-flow-analyzer <FILE> --graph-dot 'ClassName#methodName'
+  ts-flow-analyzer <FILE> --graph --icfg --json
 
 Notes:
   Metrics are always included.
   --all enables predicates, effects, data-flow, decision tables, and call graph.
   --graph is separate because it changes the top-level JSON shape.
+  --icfg requires --graph or --graph-dot and --features cfg-analysis.
 ";
 
 #[derive(Parser, Debug)]
@@ -65,6 +67,12 @@ pub struct Cli {
     /// Include unified Graph IR in JSON output (implies --json)
     #[arg(long, help_heading = "Analysis Layers")]
     pub graph: bool,
+
+    /// Include ICFG (interprocedural control flow graph) in Graph IR output.
+    /// Adds function entry/exit nodes and call/return edges for resolved same-file calls.
+    /// Requires --graph or --graph-dot, and --features cfg-analysis.
+    #[arg(long, help_heading = "Analysis Layers")]
+    pub icfg: bool,
 
     /// Enable CFG-enhanced decision table (reachability annotation + &&/|| expansion).
     /// Requires building with --features cfg-analysis for reachability; &&/|| expansion works without it.
